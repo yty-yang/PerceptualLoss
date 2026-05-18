@@ -58,7 +58,7 @@ def calc_FR_RankDVQA(width, height, dist_path, ref_path, bitDepth):
                     score = moduleNetwork(gt_patch.cuda(), video_patch.cuda())
                     score = score.data.cpu().numpy().flatten() /10
                     file.write(f"({i}, {j}): {score}\n")
-                all_scores.append(score)
+                all_scores.append(score) # TODO: ?
 
     video_file.close()
     gt_file.close()
