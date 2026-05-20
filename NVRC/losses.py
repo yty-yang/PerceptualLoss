@@ -170,6 +170,22 @@ def ms_ssim_y(x, y, v_max=1., win_size=11):
     return ms_ssim(x[:, 0:1], y[:, 0:1], v_max, win_size)
 
 
+def rankdvqa(x, y):
+    """
+    Compute the per-frame RANKDVQA score
+    """
+    # TODO: implement RANKDVQA
+    raise NotImplementedError
+
+
+def wd(x, y):
+    """
+    Compute the per-frame Wasserstein distance
+    """
+    # TODO: implement Wasserstein distance
+    raise NotImplementedError
+
+
 def compute_loss(name, x, y):
     assert x.ndim == 5 and y.ndim == 5, 'inputs are expected to have 5D ([N, C, T, H, W])'
     x, y = x.float(), y.float()
@@ -202,6 +218,10 @@ def compute_loss(name, x, y):
         loss = 1. - ms_ssim_y(x, y)
     elif name == 'ms-ssim-y-5x5':
         loss = 1. - ms_ssim_y(x, y, win_size=5)
+    elif name == 'rankdvqa':
+        loss = rankdvqa(x, y)
+    elif name == 'wd':
+        loss = wd(x, y)
     else:
         raise ValueError
     assert loss.ndim == 2, 'loss is expected to have 2D ([N, T])'
@@ -236,6 +256,10 @@ def compute_metric(name, x, y):
         metric = ms_ssim_y(x, y)
     elif name == 'ms-ssim-y-5x5':
         metric = ms_ssim_y(x, y, win_size=5)
+    elif name == 'rankdvqa':
+        metric = rankdvqa(x, y)
+    elif name == 'wd':
+        metric = wd(x, y)
     else:
         raise ValueError
     assert metric.ndim == 2, 'metric is expected to have 2D ([N, T])'
