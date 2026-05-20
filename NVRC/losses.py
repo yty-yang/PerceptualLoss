@@ -3,6 +3,7 @@ Losses
 """
 from utils import *
 import pytorch_msssim
+from RankDVQA.lpips_3d import LPIPS_3D_Diff
 
 
 def check_shape(x, y):
@@ -170,12 +171,34 @@ def ms_ssim_y(x, y, v_max=1., win_size=11):
     return ms_ssim(x[:, 0:1], y[:, 0:1], v_max, win_size)
 
 
+_rankdvqa_model = None
+def _get_rankdvqa_model():
+    global _rankdvqa_model
+    if _rankdvqa_model is None:
+        _rankdvqa_model = LPIPS_3D_Diff(net='multiscale_v33').cuda()
+        checkpoint = torch.load(os.path.join(os.path.dirname(__file__), '..', 'RankDVQA', 'models', 'FR_model'))
+        _rankdvqa_model.load_state_dict(checkpoint['model_state_dict'])
+        _rankdvqa_model.eval()
+        for p in _rankdvqa_model.parameters():
+            p.requires_grad_(False)
+    return _rankdvqa_model
+
+
 def rankdvqa(x, y):
     """
-    Compute the per-frame RANKDVQA score
+    Compute per-frame RANKDVQA loss (FR model as perceptual loss)
+    x: original frame [N, C, T, H, W]
+    y: reconstructed frame [N, C, T, H, W]
     """
-    # TODO: implement RANKDVQA
-    raise NotImplementedError
+    check_shape(x, y)
+    model = _get_rankdvqa_model()
+    N, C, T, H, W = x.shape
+
+    losses = []
+    for t in range(T):
+        score = model(x[:, :, t], y[:, :, t])
+        losses.append(score.view(N, 1))
+    return torch.cat(losses, dim=1)
 
 
 def wd(x, y):
