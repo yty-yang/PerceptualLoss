@@ -46,10 +46,7 @@ def calc_FR_RankDVQA(width, height, dist_path, ref_path, bitDepth):
         gt_patches = torch.cat(gt_patches, dim=0).unsqueeze(0)
 
         with open("scores.txt", "a") as file:
-            # score = moduleNetwork(gt_patches.cuda(), video_patches.cuda())
-            # score = score.data.cpu().numpy().flatten() /10
-            # file.write(f"{score}\n")
-            # all_scores.append(score)
+            score = 0
             for i in range(0, height-patch_size, patch_size):
                 for j in range(0, width-patch_size, patch_size):
                     video_patch = video_patches[:,:,:, i:i+patch_size, j:j+patch_size]
@@ -58,7 +55,7 @@ def calc_FR_RankDVQA(width, height, dist_path, ref_path, bitDepth):
                     score = moduleNetwork(gt_patch.cuda(), video_patch.cuda())
                     score = score.data.cpu().numpy().flatten() /10
                     file.write(f"({i}, {j}): {score}\n")
-                all_scores.append(score) # TODO: ?
+            all_scores.append(score)
 
     video_file.close()
     gt_file.close()
@@ -76,7 +73,6 @@ parser.add_argument('--height', type=int, default='1080', help='height of the in
 parser.add_argument('--bitDepth', type=int, default='8', help='bitdepth of the input video')
 
 if __name__ == '__main__':
-    
     args = parser.parse_args()
     metric = args.metric
     database = args.database
@@ -84,7 +80,6 @@ if __name__ == '__main__':
     height = args.height
     bitDepth = args.bitDepth
     STD = args.STD
-    
     moduleNetwork = LPIPS_3D_Diff(net='multiscale_v33').cuda()
     checkpoint = torch.load('./models/' + 'FR_model')
     moduleNetwork.load_state_dict(checkpoint['model_state_dict'])
@@ -120,11 +115,11 @@ if __name__ == '__main__':
     res_dict = {}
     labels = []
     preds = []
-    
+
     for idx, seq in enumerate(dis):
         ref_path = os.path.join(video_dir + '/ORIG', ref[idx])
         dist_path = os.path.join(video_dir+ '/TEST', seq)
-        
+
         t0 = time.time()
         print(metric_func)
         if metric_func is not None:
