@@ -134,7 +134,7 @@ def get_optimizer_scheduler(args, logger, accelerator, model_or_params, loader, 
     args = copy.deepcopy(args)
 
     # This is to match the accelerator option 'step_scheduler_with_optimizer=True'
-    args.sched_on_updates = True 
+    args.sched_on_updates = True
     updates_per_epoch = len(loader)
 
     # Convert to number of epochs
@@ -191,8 +191,8 @@ def get_optimizer_scheduler(args, logger, accelerator, model_or_params, loader, 
         gp_v_no_wd = groups[gp_k + '_no_wd']
         groups_list.append(gp_v)
         groups_list.append(gp_v_no_wd)
-        logger.info(f'     Key - {gp_k}  Lr scale - {gp_v['lr_scale']}  Weight decay - {gp_v['weight_decay']}  Num of params - {len(gp_v['params'])}')
-        logger.info(f'     Key - {gp_k} (No weight decay)  Lr scale - {gp_v_no_wd['lr_scale']}  Weight decay - {gp_v_no_wd['weight_decay']}  Num of params - {len(gp_v_no_wd['params'])}')
+        logger.info(f"     Key - {gp_k}  Lr scale - {gp_v['lr_scale']}  Weight decay - {gp_v['weight_decay']}  Num of params - {len(gp_v['params'])}")
+        logger.info(f"     Key - {gp_k} (No weight decay)  Lr scale - {gp_v_no_wd['lr_scale']}  Weight decay - {gp_v_no_wd['weight_decay']}  Num of params - {len(gp_v_no_wd['params'])}")
 
     optimizer = create_optimizer_v2(groups_list, **optimizer_kwargs(args))
     scheduler, _ = create_scheduler_v2(optimizer, **scheduler_kwargs(args), updates_per_epoch=updates_per_epoch)
