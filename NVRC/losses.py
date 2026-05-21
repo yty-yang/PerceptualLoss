@@ -3,8 +3,13 @@ Losses
 """
 from utils import *
 import pytorch_msssim
-from RankDVQA.lpips_3d import LPIPS_3D_Diff
-from WassersteinDistortion.wasserstein_distortion import VGG16WassersteinDistortion
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'EMLNETSaliency'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'RankDVQA', 'networks'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'WassersteinDistortion'))
+from lpips_3d import LPIPS_3D_Diff
+from wasserstein_distortion import VGG16WassersteinDistortion
+import resnet
+import decoder
 
 
 # Helper functions
@@ -54,6 +59,61 @@ def _get_wloss(device):
     if _wloss is None:
         _wloss = VGG16WassersteinDistortion().to(device)
     return _wloss
+
+
+# EMLNETSaliency wrapper for arbitrary input sizes
+class SaliencyEMLNET:
+    """EMLNETSaliency model wrapper that handles arbitrary input sizes."""
+    _instance = None
+
+    def __init__(self, backbone_dir=None, device='cuda'):
+        if backbone_dir is None:
+            backbone_dir = os.path.join(os.path.dirname(__file__), '..', 'EMLNETSaliency', 'backbone')
+        self.device = device
+        self.size = (480, 640)
+        self.num_feat = 5
+        self._load_models(backbone_dir)
+
+    def _load_models(self, backbone_dir):
+        img_model_path = os.path.join(backbone_dir, 'res_imagenet.pth')
+        pla_model_path = os.path.join(backbone_dir, 'res_places.pth')
+        dec_model_path = os.path.join(backbone_dir, 'res_decoder.pth')
+        self.img_model = resnet.resnet50(img_model_path).to(self.device).eval()
+        self.pla_model = resnet.resnet50(pla_model_path).to(self.device).eval()
+        self.decoder_model = decoder.build_decoder(dec_model_path, self.size, self.num_feat, self.num_feat).to(self.device).eval()
+        for p in self.img_model.parameters():
+            p.requires_grad_(False)
+        for p in self.pla_model.parameters():
+            p.requires_grad_(False)
+        for p in self.decoder_model.parameters():
+            p.requires_grad_(False)
+
+    def __call__(self, x):
+        """
+        Args:
+            x: Tensor [N, C, H, W], values in [0, 1]
+        Returns:
+            Tensor [N, 1, H, W], saliency map in [0, 1]
+        """
+        _, _, H, W = x.shape
+        # Resize to model input size
+        x_resized = F.interpolate(x, size=self.size, mode='bilinear', antialias=True)
+        with torch.no_grad():
+            img_feat = self.img_model(x_resized, decode=True)
+            pla_feat = self.pla_model(x_resized, decode=True)
+            pred = self.decoder_model([img_feat, pla_feat])
+            # Resize back to original size
+            saliency = F.interpolate(pred, size=(H, W), mode='bilinear', antialias=True)
+        return saliency
+
+
+_saliency_model = None
+def _get_saliency_model(device):
+    global _saliency_model
+    if _saliency_model is None:
+        _saliency_model = SaliencyEMLNET(device=device)
+    return _saliency_model
+
 
 # Loss functions
 def mse(x, y):
@@ -216,6 +276,40 @@ def wd(x, y, log2_sigma_const=2.):
     return loss
 
 
+def wd_saliency(x, y, sigma_max=5.0, pmin=0.5):
+    """
+    Compute per-frame WD loss with saliency-based sigma-map.
+
+    Args:
+        x: original frame [N, C, T, H, W]
+        y: reconstructed frame [N, C, T, H, W]
+        sigma_max: maximal sigma value (default 5.0)
+        pmin: lower bound for density p (default 0.5)
+
+    Saliency → sigma map conversion (from paper):
+        p = pmin + (1 - pmin) · s / s̄
+        sigma = sigma_max · pmin / p
+    where s is the saliency map and s̄ is its spatial mean.
+    """
+    N, _, T, _, _ = x.shape
+    saliency_model = _get_saliency_model(x[0].device)
+    wloss = _get_wloss(x[0].device)
+    loss = torch.empty(N, T, device=x[0].device)
+
+    for t in range(T):
+        frame = x[:, :, t]  # [N, C, H, W]
+        with torch.no_grad():
+            s = saliency_model(frame)  # [N, 1, H, W], in [0, 1]
+        s_mean = s.mean()  # spatial mean s̄
+        # Eq (3): p = pmin + (1 - pmin) * s / s_mean
+        p = pmin + (1 - pmin) * s / (s_mean + 1e-8)
+        # Eq (4): sigma = sigma_max * pmin / p
+        sigma = sigma_max * pmin / p
+        log2_sigma = torch.log2(sigma)
+        loss[:, t] = wloss(frame, y[:, :, t], log2_sigma)
+    return loss
+
+
 def compute_loss(name, x, y):
     check_shape(x, y)
     x, y = x.float(), y.float()
@@ -252,6 +346,8 @@ def compute_loss(name, x, y):
         loss = rankdvqa(x, y)
     elif name == 'wd':
         loss = wd(x, y)
+    elif name == 'wd-saliency':
+        loss = wd_saliency(x, y)
     else:
         raise ValueError
     assert loss.ndim == 2, 'loss is expected to have 2D ([N, T])'
@@ -290,6 +386,8 @@ def compute_metric(name, x, y):
         metric = rankdvqa(x, y)
     elif name == 'wd':
         metric = wd(x, y)
+    elif name == 'wd-saliency':
+        metric = wd_saliency(x, y)
     else:
         raise ValueError
     assert metric.ndim == 2, 'metric is expected to have 2D ([N, T])'
