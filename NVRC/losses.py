@@ -6,6 +6,7 @@ import pytorch_msssim
 from RankDVQA.lpips_3d import LPIPS_3D_Diff
 
 
+# Helper functions
 def check_shape(x, y):
     assert x.shape == y.shape, 'shape of tensors must be the same!'
     assert x.ndim == y.ndim == 5, 'inputs are expected to have 5D ([N, C, T, H, W])'
@@ -19,6 +20,34 @@ def yuv444to420(x):
     return x[:, 0:1], x_down[:, 1:2], x_down[:, 2:3]
 
 
+def _create_ssim_win(x, size, sigma):
+    """
+    Create 1-D Gaussian kernel on the target device
+    Modified from: https://github.com/VainF/pytorch-msssim/blob/master/pytorch_msssim/ssim.py
+    """
+    coords = torch.arange(size, dtype=torch.float, device=x.device)
+    coords -= size // 2
+
+    g = torch.exp(-(coords ** 2) / (2 * sigma ** 2))
+    g /= g.sum()
+
+    return g.unsqueeze(0).unsqueeze(0).repeat([x.shape[1]] + [1] * (len(x.shape) - 1))
+
+
+_rankdvqa_model = None
+def _get_rankdvqa_model():
+    global _rankdvqa_model
+    if _rankdvqa_model is None:
+        _rankdvqa_model = LPIPS_3D_Diff(net='multiscale_v33').cuda()
+        checkpoint = torch.load(os.path.join(os.path.dirname(__file__), '..', 'RankDVQA', 'models', 'FR_model'))
+        _rankdvqa_model.load_state_dict(checkpoint['model_state_dict'])
+        _rankdvqa_model.eval()
+        for p in _rankdvqa_model.parameters():
+            p.requires_grad_(False)
+    return _rankdvqa_model
+
+
+# Loss functions
 def mse(x, y):
     """
     Compute the per-frame MSE loss
@@ -115,20 +144,6 @@ def psnr_yuv611(x, y, v_max=1.):
     return ((10 * torch.log10((v_max ** 2) / (yuv_mse + 1e-9))) * yuv_weight).sum(dim=2)
 
 
-def _create_ssim_win(x, size, sigma):
-    """
-    Create 1-D Gaussian kernel on the target device
-    Modified from: https://github.com/VainF/pytorch-msssim/blob/master/pytorch_msssim/ssim.py
-    """
-    coords = torch.arange(size, dtype=torch.float, device=x.device)
-    coords -= size // 2
-
-    g = torch.exp(-(coords ** 2) / (2 * sigma ** 2))
-    g /= g.sum()
-
-    return g.unsqueeze(0).unsqueeze(0).repeat([x.shape[1]] + [1] * (len(x.shape) - 1))
-
-
 def ssim(x, y, v_max=1., win_size=11, win_sigma=1.5):
     """
     Compute the per-frame SSIM
@@ -171,19 +186,6 @@ def ms_ssim_y(x, y, v_max=1., win_size=11):
     return ms_ssim(x[:, 0:1], y[:, 0:1], v_max, win_size)
 
 
-_rankdvqa_model = None
-def _get_rankdvqa_model():
-    global _rankdvqa_model
-    if _rankdvqa_model is None:
-        _rankdvqa_model = LPIPS_3D_Diff(net='multiscale_v33').cuda()
-        checkpoint = torch.load(os.path.join(os.path.dirname(__file__), '..', 'RankDVQA', 'models', 'FR_model'))
-        _rankdvqa_model.load_state_dict(checkpoint['model_state_dict'])
-        _rankdvqa_model.eval()
-        for p in _rankdvqa_model.parameters():
-            p.requires_grad_(False)
-    return _rankdvqa_model
-
-
 def rankdvqa(x, y):
     """
     Compute per-frame RANKDVQA loss (FR model as perceptual loss)
@@ -192,7 +194,7 @@ def rankdvqa(x, y):
     """
     check_shape(x, y)
     model = _get_rankdvqa_model()
-    N, C, T, H, W = x.shape
+    N, _, T, _, _ = x.shape
 
     losses = []
     for t in range(T):
