@@ -36,10 +36,10 @@ def _create_ssim_win(x, size, sigma):
 
 
 _rankdvqa_model = None
-def _get_rankdvqa_model():
+def _get_rankdvqa_model(device):
     global _rankdvqa_model
     if _rankdvqa_model is None:
-        _rankdvqa_model = LPIPS_3D_Diff(net='multiscale_v33').cuda()
+        _rankdvqa_model = LPIPS_3D_Diff(net='multiscale_v33').to(device)
         checkpoint = torch.load(os.path.join(os.path.dirname(__file__), '..', 'RankDVQA', 'models', 'FR_model'))
         _rankdvqa_model.load_state_dict(checkpoint['model_state_dict'])
         _rankdvqa_model.eval()
@@ -47,6 +47,13 @@ def _get_rankdvqa_model():
             p.requires_grad_(False)
     return _rankdvqa_model
 
+
+_wloss = None
+def _get_wloss(device):
+    global _wloss
+    if _wloss is None:
+        _wloss = VGG16WassersteinDistortion().to(device)
+    return _wloss
 
 # Loss functions
 def mse(x, y):
@@ -185,7 +192,7 @@ def rankdvqa(x, y):
     y: reconstructed frame [N, C, T, H, W]
     """
     check_shape(x, y)
-    model = _get_rankdvqa_model()
+    model = _get_rankdvqa_model(x[0].device)
     N, _, T, _, _ = x.shape
 
     losses = []
@@ -195,20 +202,17 @@ def rankdvqa(x, y):
     return torch.cat(losses, dim=1)
 
 
-_wloss = None
 def wd(x, y, log2_sigma_const=2.):
     """
     Compute the per-frame Wasserstein distance
     """
-    N, C, T, H, W = x.shape
+    N, _, T, H, W = x.shape
     # Create constant log2_sigma map [N, 1, H, W]
     log2_sigma = torch.zeros(N, 1, H, W, device=x[0].device, dtype=x.dtype) + log2_sigma_const
-    global _wloss
-    if _wloss is None:
-        _wloss = VGG16WassersteinDistortion().to(x[0].device)
+    wloss = _get_wloss(x[0].device)
     loss = torch.empty(N, T, device=x[0].device)
     for t in range(T):
-        loss[:, t] = _wloss(x[:, :, t], y[:, :, t], log2_sigma)
+        loss[:, t] = wloss(x[:, :, t], y[:, :, t], log2_sigma)
     return loss
 
 
