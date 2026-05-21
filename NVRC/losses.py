@@ -4,6 +4,7 @@ Losses
 from utils import *
 import pytorch_msssim
 from RankDVQA.lpips_3d import LPIPS_3D_Diff
+from WassersteinDistortion.wasserstein_distortion import VGG16WassersteinDistortion
 
 
 # Helper functions
@@ -52,7 +53,6 @@ def mse(x, y):
     """
     Compute the per-frame MSE loss
     """
-    check_shape(x, y)
     N, C, T, H, W = x.shape
     x = x.permute(0, 2, 3, 4, 1).contiguous().view(N, T, H * W * C)
     y = y.permute(0, 2, 3, 4, 1).contiguous().view(N, T, H * W * C)
@@ -63,7 +63,6 @@ def log_mse(x, y):
     """
     Compute the per-frame log MSE loss
     """
-    check_shape(x, y)
     N, C, T, H, W = x.shape
     x = x.permute(0, 2, 3, 4, 1).contiguous().view(N, T, H * W * C)
     y = y.permute(0, 2, 3, 4, 1).contiguous().view(N, T, H * W * C)
@@ -75,7 +74,6 @@ def mse_yuv611_sum(x, y):
     Compute the per-frame MSE loss
     """
     assert x.shape[1] == y.shape[1] == 3, 'inputs are expected to have 3 channels'
-    check_shape(x, y)
     N, _, T, _, _ = x.shape
     x = [x_i.permute(0, 2, 3, 4, 1).contiguous().view(N, T, -1, 1) for x_i in yuv444to420(x)]
     y = [y_i.permute(0, 2, 3, 4, 1).contiguous().view(N, T, -1, 1) for y_i in yuv444to420(y)]
@@ -89,7 +87,6 @@ def mse_yuv611_product(x, y):
     Compute the per-frame MSE loss
     """
     assert x.shape[1] == y.shape[1] == 3, 'inputs are expected to have 3 channels'
-    check_shape(x, y)
     N, _, T, _, _ = x.shape
     x = [x_i.permute(0, 2, 3, 4, 1).contiguous().view(N, T, -1, 1) for x_i in yuv444to420(x)]
     y = [y_i.permute(0, 2, 3, 4, 1).contiguous().view(N, T, -1, 1) for y_i in yuv444to420(y)]
@@ -102,7 +99,6 @@ def l1(x, y):
     """
     Compute the per-frame L1 loss
     """
-    check_shape(x, y)
     N, C, T, H, W = x.shape
     x = x.permute(0, 2, 3, 4, 1).contiguous().view(N, T, H * W * C)
     y = y.permute(0, 2, 3, 4, 1).contiguous().view(N, T, H * W * C)
@@ -114,7 +110,6 @@ def l1_yuv611(x, y):
     Compute the per-frame L1 loss
     """
     assert x.shape[1] == y.shape[1] == 3, 'inputs are expected to have 3 channels'
-    check_shape(x, y)
     N, _, T, _, _ = x.shape
     x = [x_i.permute(0, 2, 3, 4, 1).contiguous().view(N, T, -1, 1) for x_i in yuv444to420(x)]
     y = [y_i.permute(0, 2, 3, 4, 1).contiguous().view(N, T, -1, 1) for y_i in yuv444to420(y)]
@@ -135,7 +130,6 @@ def psnr_yuv611(x, y, v_max=1.):
     Compute the per-frame PSNR
     """
     assert x.shape[1] == y.shape[1] == 3, 'inputs are expected to have 3 channels'
-    check_shape(x, y)
     N, _, T, _, _ = x.shape
     x = [x_i.permute(0, 2, 3, 4, 1).contiguous().view(N, T, -1, 1) for x_i in yuv444to420(x)]
     y = [y_i.permute(0, 2, 3, 4, 1).contiguous().view(N, T, -1, 1) for y_i in yuv444to420(y)]
@@ -148,7 +142,6 @@ def ssim(x, y, v_max=1., win_size=11, win_sigma=1.5):
     """
     Compute the per-frame SSIM
     """
-    check_shape(x, y)
     N, C, T, H, W = x.shape
     x = x.permute(0, 2, 1, 3, 4).contiguous().view(N * T, C, H, W)
     y = y.permute(0, 2, 1, 3, 4).contiguous().view(N * T, C, H, W)
@@ -161,7 +154,6 @@ def ms_ssim(x, y, v_max=1., win_size=11, win_sigma=1.5):
     """
     Compute the per-frame MS-SSIM
     """
-    check_shape(x, y)
     N, C, T, H, W = x.shape
     x = x.permute(0, 2, 1, 3, 4).contiguous().view(N * T, C, H, W)
     y = y.permute(0, 2, 1, 3, 4).contiguous().view(N * T, C, H, W)
@@ -203,16 +195,25 @@ def rankdvqa(x, y):
     return torch.cat(losses, dim=1)
 
 
-def wd(x, y):
+_wloss = None
+def wd(x, y, log2_sigma_const=2.):
     """
     Compute the per-frame Wasserstein distance
     """
-    # TODO: implement Wasserstein distance
-    raise NotImplementedError
+    N, C, T, H, W = x.shape
+    # Create constant log2_sigma map [N, 1, H, W]
+    log2_sigma = torch.zeros(N, 1, H, W, device=x[0].device, dtype=x.dtype) + log2_sigma_const
+    global _wloss
+    if _wloss is None:
+        _wloss = VGG16WassersteinDistortion().to(x[0].device)
+    loss = torch.empty(N, T, device=x[0].device)
+    for t in range(T):
+        loss[:, t] = _wloss(x[:, :, t], y[:, :, t], log2_sigma)
+    return loss
 
 
 def compute_loss(name, x, y):
-    assert x.ndim == 5 and y.ndim == 5, 'inputs are expected to have 5D ([N, C, T, H, W])'
+    check_shape(x, y)
     x, y = x.float(), y.float()
 
     if name == 'mse':
@@ -254,7 +255,7 @@ def compute_loss(name, x, y):
 
 
 def compute_metric(name, x, y):
-    assert x.ndim == 5 and y.ndim == 5, 'inputs are expected to have 5D ([N, C, T, H, W])'
+    check_shape(x, y)
     x, y = x.float(), y.float()
 
     if name == 'mse':

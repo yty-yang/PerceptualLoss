@@ -19,7 +19,7 @@ import torch.nn.functional as F
 import numpy as np
 from torchvision import models as tv
 
-Tensor = torch.Tensor
+from torch import Tensor
 
 
 class LowpassFilter2D(nn.Module):
