@@ -22,8 +22,8 @@ echo "LR_S2: ${LR_S2}"
 echo "GRAD_ACCUM: ${GRAD_ACCUM}"
 echo "BATCH_SIZE: ${BATCH_SIZE}"
 
-WORK_DIR=${WORK_DIR:-${HOME}}
-ROOT=${WORK_DIR}/Programs
+WORK_DIR=${WORK_DIR:-${HOME}/PerceptualLoss}
+ROOT=${WORK_DIR}/NVRC
 TRAIN_TASK_CFG=scripts/configs/tasks/overfit/l1_ms-ssim-5x5.yaml
 EVAL_TASK_CFG=scripts/configs/tasks/overfit/l1_ms-ssim.yaml
 COMPRESS_MODEL_CFG_S1=scripts/configs/nvrc/compress_models/nvrc_s1.yaml
@@ -66,8 +66,9 @@ echo "    Stage 2: ${EXP_NAME_S2}"
 # S1 training
 # check if output/${EXP_NAME_S1} exists, if not create it
 if [ ! -d ${OUTPUT}/${EXP_NAME_S1} ]; then
-    . ${WORK_DIR}/miniconda3/bin/activate
-    conda activate NVRC
+    CONDA_ROOT=$(dirname $(dirname $(which conda)))
+    . ${CONDA_ROOT}/bin/activate
+    conda activate perceptual
     cd $ROOT/NVRC && \
     accelerate launch --main_process_ip=${MASTER_ADDR} --main_process_port=${MASTER_PORT} \
                       --gpu_ids=${GPU_ID} --num_processes=${NUM_PROC} --mixed_precision=fp16 --dynamo_backend=inductor \
@@ -97,8 +98,9 @@ fi
 
 # S2 training
 if [ ! -d ${OUTPUT}/${EXP_NAME_S2} ]; then
-    . ${WORK_DIR}/miniconda3/bin/activate
-    conda activate NVRC
+    CONDA_ROOT=$(dirname $(dirname $(which conda)))
+    . ${CONDA_ROOT}/bin/activate
+    conda activate perceptual
     cd $ROOT/NVRC && \
     accelerate launch --main_process_ip=${MASTER_ADDR} --main_process_port=${MASTER_PORT} \
                       --gpu_ids=${GPU_ID} --num_processes=${NUM_PROC} --mixed_precision=fp16 --dynamo_backend=inductor \
