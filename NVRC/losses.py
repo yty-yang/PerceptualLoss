@@ -312,18 +312,43 @@ def ms_ssim_y(x, y, v_max=1.0, win_size=11):
 
 def rankdvqa(x, y):
     """
-    Compute per-frame RANKDVQA loss (FR model as perceptual loss)
-    x: original frame [N, C, T, H, W]
-    y: reconstructed frame [N, C, T, H, W]
+    Compute RANKDVQA loss using sliding window (V=12 frames per forward pass)
+    x: original frames [N, C, T, H, W]
+    y: reconstructed frames [N, C, T, H, W]
     """
     model = _get_rankdvqa_model(x[0].device)
-    N, _, T, _, _ = x.shape
+    N, C, T, H, W = x.shape
+    V = 12  # RankDVQA model expects V=12
 
-    losses = []
-    for t in range(T):
-        score = model(x[:, :, t], y[:, :, t])
-        losses.append(score.view(N, 1))
-    return torch.cat(losses, dim=1)
+    if T <= V:
+        # Pad to V by repeating last frame
+        pad = V - T
+        x_padded = torch.cat([x, x[:, :, -1:].expand(N, C, pad, H, W)], dim=2)
+        y_padded = torch.cat([y, y[:, :, -1:].expand(N, C, pad, H, W)], dim=2)
+        x_swin = x_padded.permute(0, 2, 1, 3, 4)  # (N, V, C, H, W)
+        y_swin = y_padded.permute(0, 2, 1, 3, 4)
+        score = model(x_swin, y_swin)  # (N, 1, 1, 1)
+        return score.squeeze(-1).squeeze(-1).squeeze(-1)  # (N,)
+    else:
+        # Sliding windows to cover T frames
+        stride = max(1, (T - V) // max(1, (T - V) // (V // 2)))
+        starts = list(range(0, T - V + 1, stride))
+        if starts[-1] + V < T:
+            starts.append(T - V)
+
+        x_swin = x.permute(0, 2, 1, 3, 4)  # (N, T, C, H, W)
+        y_swin = y.permute(0, 2, 1, 3, 4)
+
+        scores = []
+        for start in starts:
+            seg_x = x_swin[:, start:start+V]  # (N, V, C, H, W)
+            seg_y = y_swin[:, start:start+V]
+            score = model(seg_x, seg_y)  # (N, 1, 1, 1)
+            scores.append(score.squeeze(-1).squeeze(-1).squeeze(-1))  # (N,)
+
+        # Average over windows, then broadcast back to per-frame
+        final_score = torch.stack(scores, dim=1).mean(dim=1)  # (N,)
+        return final_score  # (N,) — will be broadcast in compute_loss
 
 
 def wd(x, y, log2_sigma_const=2.0):
