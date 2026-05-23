@@ -4,10 +4,10 @@ Losses
 
 from utils import *
 import pytorch_msssim
-from RankDVQA.networks import LPIPS_3D_Diff
-from WassersteinDistortion.wasserstein_distortion import VGG16WassersteinDistortion
-import EMLNETSaliency.resnet as resnet
-import EMLNETSaliency.decoder as decoder
+from NVRC.loss_models.RankDVQA.networks import LPIPS_3D_Diff
+from NVRC.loss_models.WassersteinDistortion.wasserstein_distortion import VGG16WassersteinDistortion
+import NVRC.loss_models.EMLNETSaliency.resnet as resnet
+import NVRC.loss_models.EMLNETSaliency.decoder as decoder
 
 
 # Helper functions
