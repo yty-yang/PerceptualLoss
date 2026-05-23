@@ -49,7 +49,7 @@ def _get_rankdvqa_model(device):
         _rankdvqa_model = LPIPS_3D_Diff(net="multiscale_v33").to(device)
         checkpoint = torch.load(
             os.path.join(
-                os.path.dirname(__file__), "..", "RankDVQA", "models", "FR_model"
+                os.path.dirname(__file__), "loss_models", "RankDVQA", "models", "FR_model"
             )
         )
         _rankdvqa_model.load_state_dict(checkpoint["model_state_dict"])
@@ -78,7 +78,7 @@ class SaliencyEMLNET:
     def __init__(self, backbone_dir=None, device="cuda"):
         if backbone_dir is None:
             backbone_dir = os.path.join(
-                os.path.dirname(__file__), "..", "EMLNETSaliency", "backbone"
+                os.path.dirname(__file__), "loss_models", "EMLNETSaliency", "backbone"
             )
         self.device = device
         self.size = (480, 640)

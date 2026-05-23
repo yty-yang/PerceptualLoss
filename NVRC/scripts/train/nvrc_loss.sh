@@ -2,25 +2,60 @@
 # Usage: nvrc_train.sh <GPU_ID> <VID> <LAMB> <SCALE> <LR_S1> <LR_S2> <GRAD_ACCUM> <BATCH_SIZE> [LOSS_TYPE]
 # Defaults: GPU_ID=0, VID=BasketballDrive_1920x1080_50, LAMB=1.0, SCALE=s, LR_S1=2e-3, LR_S2=1e-4, GRAD_ACCUM=8, BATCH_SIZE=80, LOSS_TYPE=wd
 
-: ${1:=0} ${2:=BasketballDrive_1920x1080_50} ${3:=1.0} ${4:=s} ${5:=2e-3} ${6:=1e-4} ${7:=8} ${8:=80} ${9:=wd}
+GPU_ID=0
+VID=BasketballDrive_1920x1080_50
+LAMB=1.0
+SCALE=s
+LR_S1=2e-3
+LR_S2=1e-4
+GRAD_ACCUM=8
+BATCH_SIZE=80
+LOSS_TYPE=wd
 
-if [ "$#" -lt 8 ]; then
-    echo "Usage: $0 <GPU_ID> <VID> <LAMB> <SCALE> <LR_S1> <LR_S2> <GRAD_ACCUM> <BATCH_SIZE> [LOSS_TYPE]"
-    echo "  GPU_ID=0, VID=BasketballDrive_1920x1080_50, LAMB=1.0, SCALE=s, LR_S1=2e-3, LR_S2=1e-4, GRAD_ACCUM=8, BATCH_SIZE=80, LOSS_TYPE=wd by default."
-    echo "  Available LOSS_TYPE: wd, rankdvqa, l1_ms-ssim, l1_ms-ssim-5x5"
-    exit 1
-fi
-
-GPU_ID=$1
-VID=$2
-LAMB=$3
-SCALE=$4
-LR_S1=$5
-LR_S2=$6
-GRAD_ACCUM=$7
-BATCH_SIZE=$8
-LOSS_TYPE=${9:-wd}
-shift 9
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -gpu | --gpu_id)
+            GPU_ID="$2"
+            shift 2
+            ;;
+        -vid | --vid)
+            VID="$2"
+            shift 2
+            ;;
+        -lamb | --lamb)
+            LAMB="$2"
+            shift 2
+            ;;
+        -scale | --scale)
+            SCALE="$2"
+            shift 2
+            ;;
+        -lr1 | --lr_s1)
+            LR_S1="$2"
+            shift 2
+            ;;
+        -lr2 | --lr_s2)
+            LR_S2="$2"
+            shift 2
+            ;;
+        -ga | --grad_accum)
+            GRAD_ACCUM="$2"
+            shift 2
+            ;;
+        -bs | --batch_size)
+            BATCH_SIZE="$2"
+            shift 2
+            ;;
+        -loss | --loss_type)
+            LOSS_TYPE="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
 
 echo "GPU_ID: ${GPU_ID}"
 echo "VID: ${VID}"
