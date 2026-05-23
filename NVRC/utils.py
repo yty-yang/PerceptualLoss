@@ -145,6 +145,7 @@ def get_optimizer_scheduler(args, logger, accelerator, model_or_params, loader, 
         wd_filter_fn = lambda k, v: (k.endswith('bias') or v.ndim <= 1)
 
     # Auto lr scaling - linearly scale the learning rate with the batch size (in frames)
+    # TODO: bug here?
     if args.auto_lr_scaling:
         relative_batch_size = args.train_batch_size * accelerator.num_processes * args.grad_accum * \
                               math.prod(loader.dataset.get_patch_size()[1:]) / \

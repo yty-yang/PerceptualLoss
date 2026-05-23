@@ -111,7 +111,7 @@ run_training() {
                      --train-batch-size ${TRAIN_BATCH_SIZE} --eval-batch-size ${EVAL_BATCH_SIZE} \
                      --train-enable-log false --eval-enable-log ${eval_log} --log-epochs -2 \
                      --opt adam --sched cosine \
-                     --lr ${lr} --warmup-lr 1e-5 --min-lr ${min_lr} --auto-lr-scaling true --max-norm 1.0 \
+                     --lr ${lr} --warmup-lr 1e-5 --min-lr ${min_lr} --auto-lr-scaling false --max-norm 1.0 \
                      --workers 4 --prefetch-factor 4 \
                      ${6:-}
     else
