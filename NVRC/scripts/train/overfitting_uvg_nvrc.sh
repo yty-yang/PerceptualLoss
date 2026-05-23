@@ -23,7 +23,7 @@ echo "GRAD_ACCUM: ${GRAD_ACCUM}"
 echo "BATCH_SIZE: ${BATCH_SIZE}"
 
 WORK_DIR=${WORK_DIR:-${HOME}/PerceptualLoss}
-ROOT=${WORK_DIR}/NVRC
+ROOT=${WORK_DIR}
 TRAIN_TASK_CFG=scripts/configs/tasks/overfit/l1_ms-ssim-5x5.yaml
 EVAL_TASK_CFG=scripts/configs/tasks/overfit/l1_ms-ssim.yaml
 COMPRESS_MODEL_CFG_S1=scripts/configs/nvrc/compress_models/nvrc_s1.yaml
