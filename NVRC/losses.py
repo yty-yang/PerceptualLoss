@@ -325,10 +325,10 @@ def rankdvqa(x, y):
         pad = V - T
         x_padded = torch.cat([x, x[:, :, -1:].expand(N, C, pad, H, W)], dim=2)
         y_padded = torch.cat([y, y[:, :, -1:].expand(N, C, pad, H, W)], dim=2)
-        x_swin = x_padded.permute(0, 2, 1, 3, 4)  # (N, V, C, H, W)
-        y_swin = y_padded.permute(0, 2, 1, 3, 4)
+        x_swin = x_padded.permute(0, 2, 1, 3, 4).contiguous()  # (N, V, C, H, W)
+        y_swin = y_padded.permute(0, 2, 1, 3, 4).contiguous()
         score = model(x_swin, y_swin)  # (N, 1, 1, 1)
-        return score.squeeze(-1).squeeze(-1).squeeze(-1)  # (N,)
+        return score.squeeze(-1).squeeze(-1).squeeze(-1).unsqueeze(1).expand(-1, T)  # (N, T)
     else:
         # Sliding windows to cover T frames
         stride = max(1, (T - V) // max(1, (T - V) // (V // 2)))
@@ -336,8 +336,8 @@ def rankdvqa(x, y):
         if starts[-1] + V < T:
             starts.append(T - V)
 
-        x_swin = x.permute(0, 2, 1, 3, 4)  # (N, T, C, H, W)
-        y_swin = y.permute(0, 2, 1, 3, 4)
+        x_swin = x.permute(0, 2, 1, 3, 4).contiguous()  # (N, T, C, H, W)
+        y_swin = y.permute(0, 2, 1, 3, 4).contiguous()
 
         scores = []
         for start in starts:
@@ -348,7 +348,7 @@ def rankdvqa(x, y):
 
         # Average over windows, then broadcast back to per-frame
         final_score = torch.stack(scores, dim=1).mean(dim=1)  # (N,)
-        return final_score  # (N,) — will be broadcast in compute_loss
+        return final_score.unsqueeze(1).expand(-1, T)  # (N, T) — will be broadcast in compute_loss
 
 
 def wd(x, y, log2_sigma_const=2.0):
