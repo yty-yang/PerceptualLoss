@@ -8,6 +8,9 @@ LAMB=1.0
 SCALE=s
 LR_S1=2e-3
 LR_S2=1e-4
+T_PATCH=1
+H_PATCH=216
+W_PATCH=240
 GRAD_ACCUM=8
 BATCH_SIZE=80
 LOSS_TYPE=wd
@@ -36,6 +39,18 @@ while [[ $# -gt 0 ]]; do
             ;;
         -lr2 | --lr_s2)
             LR_S2="$2"
+            shift 2
+            ;;
+        -tpatch | --t_patch)
+            T_PATCH="$2"
+            shift 2
+            ;;
+        -hpitch | --h_patch)
+            H_PATCH="$2"
+            shift 2
+            ;;
+        -wpitch | --w_patch)
+            W_PATCH="$2"
             shift 2
             ;;
         -ga | --grad_accum)
@@ -97,9 +112,6 @@ FMT=png
 T=-1
 H=-1
 W=-1
-T_PATCH=1
-H_PATCH=216
-W_PATCH=240
 NUM_PROC=1
 GRAD_ACCUM=${GRAD_ACCUM}
 TRAIN_BATCH_SIZE=${BATCH_SIZE}
