@@ -1,6 +1,10 @@
 #!/bin/bash
+# Default values: GPU_ID VID LAMB SCALE LR_S1 LR_S2 GRAD_ACCUM BATCH_SIZE
+: ${1:=0} ${2:=BasketballDrive_1920x1080_50} ${3:=1.0} ${4:=s} ${5:=2e-3} ${6:=1e-4} ${7:=8} ${8:=80}
+
 if [ "$#" -ne 8 ]; then
-    echo "Incorrect number of parameters"
+    echo "Usage: $0 <GPU_ID> <VID> <LAMB> <SCALE> <LR_S1> <LR_S2> <GRAD_ACCUM> <BATCH_SIZE>"
+    echo "  GPU_ID=0, VID=BasketballDrive_1920x1080_50, LAMB=1.0, SCALE=s, LR_S1=2e-3, LR_S2=1e-4, GRAD_ACCUM=8, BATCH_SIZE=80 by default."
     exit 1
 fi
 GPU_ID=$1
@@ -42,8 +46,8 @@ T=-1
 H=-1
 W=-1
 T_PATCH=1
-H_PATCH=216
-W_PATCH=240
+H_PATCH=216 # factor of 1080, can be divided by 24
+W_PATCH=240 # factor of 1920, can be divided by 24
 NUM_PROC=1
 GRAD_ACCUM=${GRAD_ACCUM}
 TRAIN_BATCH_SIZE=${BATCH_SIZE}
