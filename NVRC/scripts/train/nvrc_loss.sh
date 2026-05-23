@@ -45,11 +45,11 @@ while [[ $# -gt 0 ]]; do
             T_PATCH="$2"
             shift 2
             ;;
-        -hpitch | --h_patch)
+        -hpatch | --h_patch)
             H_PATCH="$2"
             shift 2
             ;;
-        -wpitch | --w_patch)
+        -wpatch | --w_patch)
             W_PATCH="$2"
             shift 2
             ;;
