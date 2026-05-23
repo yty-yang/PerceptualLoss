@@ -36,6 +36,7 @@ htmlcov/
 *.log
 
 # Data / model outputs
+datasets/
 outputs/
 results/
 checkpoints/
