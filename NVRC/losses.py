@@ -328,7 +328,7 @@ def rankdvqa(x, y):
         x_swin = x_padded.permute(0, 2, 1, 3, 4).contiguous()  # (N, V, C, H, W)
         y_swin = y_padded.permute(0, 2, 1, 3, 4).contiguous()
         score = model(x_swin, y_swin)  # (N, 1, 1, 1)
-        return score.squeeze(-1).squeeze(-1).squeeze(-1).unsqueeze(1).expand(-1, T)  # (N, T)
+        return score.squeeze(-1).squeeze(-1).squeeze(-1).unsqueeze(1).repeat(1, T)  # (N, T)
     else:
         # Sliding windows to cover T frames
         stride = max(1, (T - V) // max(1, (T - V) // (V // 2)))
@@ -348,7 +348,7 @@ def rankdvqa(x, y):
 
         # Average over windows, then broadcast back to per-frame
         final_score = torch.stack(scores, dim=1).mean(dim=1)  # (N,)
-        return final_score.unsqueeze(1).expand(-1, T)  # (N, T) — will be broadcast in compute_loss
+        return final_score.unsqueeze(1).repeat(1, T)  # (N, T) — will be broadcast in compute_loss
 
 
 def wd(x, y, log2_sigma_const=2.0):
