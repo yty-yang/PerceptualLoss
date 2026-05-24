@@ -1,4 +1,4 @@
-loss: [1.0, wd_saliency]
+loss: [1.0, wd-saliency]
 metric: [psnr, ms-ssim-5x5]
 color_space: RGB
 lamb: 1.0
