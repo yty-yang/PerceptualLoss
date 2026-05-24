@@ -269,7 +269,7 @@ class VGG16WassersteinDistortion(nn.Module):
         assert len(feats_pred) == len(feats_gt)
         for fp, fgt in zip(feats_pred, feats_gt):
             ls = F.interpolate(
-                log2_sigma, size=fgt.shape[-2:], mode="bilinear", antialias=True
+                log2_sigma, size=fgt.shape[-2:], mode="bilinear", antialias=False
             )
             # Rescale sigma to match the feature arrays. For example, if a feature array
             # has a very low spatial resolution, we make sigma correspondingly smaller,
