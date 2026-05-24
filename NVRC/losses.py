@@ -351,14 +351,14 @@ def rankdvqa(x, y):
         return final_score.unsqueeze(1).repeat(1, T)  # (N, T) — will be broadcast in compute_loss
 
 
-def wd(x, y, log2_sigma_const=2.0):
+def wd(x, y, sigma_const=8.0):
     """
     Compute the per-frame Wasserstein distance
     """
     N, _, T, H, W = x.shape
     # Create constant log2_sigma map [N, 1, H, W]
     log2_sigma = (
-        torch.zeros(N, 1, H, W, device=x[0].device, dtype=x.dtype) + log2_sigma_const
+        torch.zeros(N, 1, H, W, device=x[0].device, dtype=x.dtype) + torch.log2(torch.tensor(sigma_const))
     )
     wloss = _get_wloss(x[0].device)
     loss = torch.empty(N, T, device=x[0].device)
@@ -367,14 +367,14 @@ def wd(x, y, log2_sigma_const=2.0):
     return loss
 
 
-def wd_saliency(x, y, sigma_max=5.0, pmin=0.5):
+def wd_saliency(x, y, sigma_max=16.0, pmin=0.5):
     """
     Compute per-frame WD loss with saliency-based sigma-map.
 
     Args:
         x: original frame [N, C, T, H, W]
         y: reconstructed frame [N, C, T, H, W]
-        sigma_max: maximal sigma value (default 5.0)
+        sigma_max: maximal sigma value (default 16.0)
         pmin: lower bound for density p (default 0.5)
 
     Saliency → sigma map conversion (from paper):
