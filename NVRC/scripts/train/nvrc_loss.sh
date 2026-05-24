@@ -66,7 +66,7 @@ while [[ $# -gt 0 ]]; do
             LOSS_TYPE="$2"
             shift 2
             ;;
-        -eval_t_patch | --eval_t_patch)
+        -eval_tpatch | --eval_t_patch)
             EVAL_T_PATCH="$2"
             shift 2
             ;;
