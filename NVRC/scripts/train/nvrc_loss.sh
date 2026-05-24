@@ -144,8 +144,7 @@ run_training() {
     local eval_log=$5
 
     if [ ! -d ${OUTPUT}/${exp_name} ]; then
-        CONDA_ROOT=$(dirname $(dirname $(which conda)))
-        . ${CONDA_ROOT}/bin/activate
+        source "$(conda info --base)/etc/profile.d/conda.sh"
         conda activate perceptual
         cd $ROOT/NVRC && \
         accelerate launch --main_process_ip=${MASTER_ADDR} --main_process_port=${MASTER_PORT} \
