@@ -14,6 +14,7 @@ W_PATCH=120
 GRAD_ACCUM=1
 BATCH_SIZE=144
 LOSS_TYPE=wd
+EVAL_T_PATCH=1
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -65,6 +66,10 @@ while [[ $# -gt 0 ]]; do
             LOSS_TYPE="$2"
             shift 2
             ;;
+        -eval_t_patch | --eval_t_patch)
+            EVAL_T_PATCH="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown option: $1"
             exit 1
@@ -81,7 +86,7 @@ echo "LR_S2: ${LR_S2}"
 echo "GRAD_ACCUM: ${GRAD_ACCUM}"
 echo "BATCH_SIZE: ${BATCH_SIZE}"
 echo "LOSS_TYPE: ${LOSS_TYPE}"
-
+echo "EVAL_T_PATCH: ${EVAL_T_PATCH}"
 # Map LOSS_TYPE to config file
 case "${LOSS_TYPE}" in
     wd|rankdvqa|l1_ms-ssim|l1_ms-ssim-5x5)
@@ -153,7 +158,7 @@ run_training() {
                      --lamb ${LAMB} \
                      --start-frame ${START_FRAME} --num-frames ${NUM_FRAMES} --intra-period ${INTRA_PERIOD} \
                      --train-video-size ${T} ${H} ${W} --eval-video-size ${T} ${H} ${W} \
-                     --train-patch-size ${T_PATCH} ${H_PATCH} ${W_PATCH} --eval-patch-size 1 -1 -1 \
+                     --train-patch-size ${T_PATCH} ${H_PATCH} ${W_PATCH} --eval-patch-size ${EVAL_T_PATCH} -1 -1 \
                      --grad-accum ${GRAD_ACCUM} --rate-steps 8 \
                      --train-batch-size ${TRAIN_BATCH_SIZE} --eval-batch-size ${EVAL_BATCH_SIZE} \
                      --train-enable-log false --eval-enable-log ${eval_log} --log-epochs -2 \
