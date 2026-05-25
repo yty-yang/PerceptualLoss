@@ -214,7 +214,7 @@ def rankdvqa(x, y):
             y[n : n + 1], x[n : n + 1], model, stanet, extractor, scaling_layer
         )
         # quality is the STANet quality score (higher = better quality).
-        # Negate so minimizing loss = maximizing quality; broadcast to all frames.
+        # Sigmoid bounds to (0, 1), negate so minimizing loss = maximizing quality.
         # unsqueeze then expand keeps the autograd graph intact (no in-place ops).
         per_sample.append(-quality.unsqueeze(0).expand(T))
 
@@ -252,21 +252,29 @@ def wd_saliency(x, y, sigma_max=16.0, pmin=0.5):
         sigma = sigma_max · pmin / p
     where s is the saliency map and s̄ is its spatial mean.
     """
-    N, _, T, _, _ = x.shape
+    N, C, T, H, W = x.shape
     saliency_model = get_saliency_model(x[0].device)
     wloss = get_wloss(x[0].device)
     loss = torch.empty(N, T, device=x[0].device)
 
+    # Batch all T frames into one forward pass: [N, C, T, H, W] → [N*T, C, H, W]
+    frames_all = x.permute(0, 2, 1, 3, 4).contiguous().view(N * T, C, H, W)
+    with torch.no_grad():
+        s_all = saliency_model(frames_all)  # [N*T, 1, H, W]
+    s_all = s_all.view(N, T, 1, H, W)  # [N, T, 1, H, W]
+
     for t in range(T):
         frame = x[:, :, t]  # [N, C, H, W]
-        with torch.no_grad():
-            s = saliency_model(frame)  # [N, 1, H, W], in [0, 1]
+        s = s_all[:, t]  # [N, 1, h_out, w_out] — decoder output resolution
         s_mean = s.mean(dim=[1, 2, 3], keepdim=True)  # [N, 1, 1, 1]
         # Eq (3): p = pmin + (1 - pmin) * s / s_mean
         p = pmin + (1 - pmin) * s / (s_mean + 1e-8)
-        # Eq (4): sigma = sigma_max * pmin / p
-        sigma = sigma_max * pmin / p
-        log2_sigma = torch.log2(sigma)
+        # Eq (4): sigma = sigma_max * pmin / p — computed at low resolution
+        log2_sigma = torch.log2(sigma_max * pmin / p)
+        # Upsample sigma-map to full resolution for wloss
+        log2_sigma = F.interpolate(
+            log2_sigma, size=(H, W), mode="bilinear", antialias=True
+        )
         loss[:, t] = wloss(frame, y[:, :, t], log2_sigma)
     return loss
 
