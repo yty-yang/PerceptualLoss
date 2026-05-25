@@ -327,10 +327,9 @@ class SaliencyEMLNET:
         _, _, H, W = x.shape
         # Resize to model input size
         x_resized = F.interpolate(x, size=self.size, mode="bilinear", antialias=True)
-        with torch.no_grad():
+        with torch.no_grad(), torch.autocast(device_type=x.device.type):
             img_feat = self.img_model(x_resized, decode=True)
             pla_feat = self.pla_model(x_resized, decode=True)
             pred = self.decoder_model([img_feat, pla_feat])
-            # Resize back to original size
-            saliency = F.interpolate(pred, size=(H, W), mode="bilinear", antialias=True)
-        return saliency
+        # Return at decoder output resolution; caller upsamples after sigma computation
+        return pred.float()
