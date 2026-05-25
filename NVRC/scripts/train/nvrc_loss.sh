@@ -1,9 +1,9 @@
 #!/bin/bash
 # Usage: nvrc_train.sh <GPU_ID> <VID> <LAMB> <SCALE> <LR_S1> <LR_S2> <GRAD_ACCUM> <BATCH_SIZE> [LOSS_TYPE]
-# Defaults: GPU_ID=0, VID=BasketballDrive_1920x1080_50, LAMB=1.0, SCALE=s, LR_S1=2e-3, LR_S2=1e-4, GRAD_ACCUM=8, BATCH_SIZE=80, LOSS_TYPE=wd
+# Defaults: GPU_ID=0, VID=Test_50frame, LAMB=1.0, SCALE=s, LR_S1=2e-3, LR_S2=1e-4, GRAD_ACCUM=8, BATCH_SIZE=80, LOSS_TYPE=wd
 
 GPU_ID=0
-VID=BasketballDrive_1920x1080_50
+VID=Test_50frame
 LAMB=1.0
 SCALE=s
 LR_S1=2e-3
