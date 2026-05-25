@@ -14,7 +14,6 @@ from NVRC.losses_helpers import (
     get_wloss,
     get_saliency_model,
     compute_stanet_score,
-    SaliencyEMLNET,
 )
 import pytorch_msssim
 
@@ -221,7 +220,7 @@ def rankdvqa(x, y):
     return torch.stack(per_sample, dim=0)  # (N, T)
 
 
-def wd(x, y, sigma_const=8.0):
+def wd(x, y, sigma_const=8.0, scale=0.02):
     """
     Compute the per-frame Wasserstein distance
     """
@@ -234,10 +233,10 @@ def wd(x, y, sigma_const=8.0):
     loss = torch.empty(N, T, device=x[0].device)
     for t in range(T):
         loss[:, t] = wloss(x[:, :, t], y[:, :, t], log2_sigma)
-    return loss
+    return loss * scale
 
 
-def wd_saliency(x, y, sigma_max=16.0, pmin=0.5):
+def wd_saliency(x, y, sigma_max=16.0, pmin=0.5, scale=0.02):
     """
     Compute per-frame WD loss with saliency-based sigma-map.
 
@@ -246,6 +245,7 @@ def wd_saliency(x, y, sigma_max=16.0, pmin=0.5):
         y: reconstructed frame [N, C, T, H, W]
         sigma_max: maximal sigma value (default 16.0)
         pmin: lower bound for density p (default 0.5)
+        scale: scaling factor for the final loss (default 0.02)
 
     Saliency → sigma map conversion (from paper):
         p = pmin + (1 - pmin) · s / s̄
@@ -276,7 +276,7 @@ def wd_saliency(x, y, sigma_max=16.0, pmin=0.5):
             log2_sigma, size=(H, W), mode="bilinear", antialias=True
         )
         loss[:, t] = wloss(frame, y[:, :, t], log2_sigma)
-    return loss
+    return loss * scale
 
 
 def compute_loss(name, x, y):
