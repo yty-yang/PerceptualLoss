@@ -5,10 +5,11 @@ Loss helpers - internal utilities for loss computation.
 from utils import *
 from NVRC.loss_models.RankDVQA.STANet.networks.multi_scale import Extractor
 from NVRC.loss_models.RankDVQA.STANet.networks.common import ScalingLayer
-from NVRC.loss_models.WassersteinDistortion.wasserstein_distortion import VGG16WassersteinDistortion
+from NVRC.loss_models.WassersteinDistortion.wasserstein_distortion import (
+    VGG16WassersteinDistortion,
+)
 import NVRC.loss_models.EMLNETSaliency.resnet as resnet
 import NVRC.loss_models.EMLNETSaliency.decoder as decoder
-
 
 # Model singletons
 _rankdvqa_model = None
@@ -52,10 +53,15 @@ def get_rankdvqa_model(device):
     global _rankdvqa_model
     if _rankdvqa_model is None:
         from NVRC.loss_models.RankDVQA.networks import LPIPS_3D_Diff
+
         _rankdvqa_model = LPIPS_3D_Diff(net="multiscale_v33").to(device)
         checkpoint = torch.load(
             os.path.join(
-                os.path.dirname(__file__), "loss_models", "RankDVQA", "models", "FR_model"
+                os.path.dirname(__file__),
+                "loss_models",
+                "RankDVQA",
+                "models",
+                "FR_model",
             ),
             weights_only=False,
         )
@@ -70,10 +76,17 @@ def get_stanet_model(device):
     global _stanet_model
     if _stanet_model is None:
         from NVRC.loss_models.RankDVQA.STANet.networks.network import STANet
+
         _stanet_model = STANet().to(device)
         stanet_checkpoint = torch.load(
             os.path.join(
-                os.path.dirname(__file__), "loss_models", "RankDVQA", "STANet", "exp", "stanet", "stanet_epoch_20.pth"
+                os.path.dirname(__file__),
+                "loss_models",
+                "RankDVQA",
+                "STANet",
+                "exp",
+                "stanet",
+                "stanet_epoch_20.pth",
             ),
             weights_only=False,
         )
@@ -90,14 +103,18 @@ def get_extractor(device):
         _extractor = Extractor().to(device)
         rankdvqa_checkpoint = torch.load(
             os.path.join(
-                os.path.dirname(__file__), "loss_models", "RankDVQA", "models", "FR_model"
+                os.path.dirname(__file__),
+                "loss_models",
+                "RankDVQA",
+                "models",
+                "FR_model",
             ),
             weights_only=False,
         )
         extractor_state_dict = {
-            k.replace('net.moduleExtractor.', ''): v
+            k.replace("net.moduleExtractor.", ""): v
             for k, v in rankdvqa_checkpoint["model_state_dict"].items()
-            if 'net.moduleExtractor' in k
+            if "net.moduleExtractor" in k
         }
         _extractor.load_state_dict(extractor_state_dict, strict=False)
         _extractor.eval()
@@ -134,20 +151,25 @@ def compute_stanet_score(x_single, y_single, model, stanet, extractor, scaling_l
 
     Replicates the data preparation in RankDVQA/STANet/data/dataset_test.py:
     - 12 frames per temporal window (non-overlapping)
-    - 256×256 spatial patches with stride 110 (width) and 103 (height)
-    - STANet requires exactly 1440 = 10×9×16 patches; tiles patches if fewer are available
+    - 256x256 spatial patches with stride 110 (width) and 103 (height)
+    - STANet requires exactly 1440 = 10x9x16 patches; tiles patches if fewer are available
 
     x_single: original frames [1, C, T, H, W] in [0, 1]
     y_single: reconstructed (distorted) frames [1, C, T, H, W] in [0, 1]
     Returns: scalar quality score (higher = better quality, range depends on patch scores)
     """
-    FRAMES_PER_WIN = 12   # V: frames per temporal window (hardcoded in SwinDiffTiny)
+    FRAMES_PER_WIN = 12  # V: frames per temporal window (hardcoded in SwinDiffTiny)
     PATCH_SIZE = 256
-    H_STRIDE = 103        # height patch stride (from dataset)
-    W_STRIDE = 110        # width patch stride (from dataset)
+    H_STRIDE = 103  # height patch stride (from dataset)
+    W_STRIDE = 110  # width patch stride (from dataset)
     N_TARGET = 10 * 9 * 16  # 1440: STANet's hardcoded requirement
 
-    C, T, H, W = x_single.shape[1], x_single.shape[2], x_single.shape[3], x_single.shape[4]
+    C, T, H, W = (
+        x_single.shape[1],
+        x_single.shape[2],
+        x_single.shape[3],
+        x_single.shape[4],
+    )
     device = x_single.device
 
     # Ensure 3 channels (Extractor and LPIPS_3D_Diff require 3-channel input)
@@ -168,10 +190,16 @@ def compute_stanet_score(x_single, y_single, model, stanet, extractor, scaling_l
     if H < PATCH_SIZE or W < PATCH_SIZE:
         new_H, new_W = max(H, PATCH_SIZE), max(W, PATCH_SIZE)
         xp = F.interpolate(
-            xp.reshape(T, C, H, W), size=(new_H, new_W), mode='bilinear', align_corners=False
+            xp.reshape(T, C, H, W),
+            size=(new_H, new_W),
+            mode="bilinear",
+            align_corners=False,
         ).view(1, T, C, new_H, new_W)
         yp = F.interpolate(
-            yp.reshape(T, C, H, W), size=(new_H, new_W), mode='bilinear', align_corners=False
+            yp.reshape(T, C, H, W),
+            size=(new_H, new_W),
+            mode="bilinear",
+            align_corners=False,
         ).view(1, T, C, new_H, new_W)
         H, W = new_H, new_W
 
@@ -188,18 +216,30 @@ def compute_stanet_score(x_single, y_single, model, stanet, extractor, scaling_l
     w_starts = list(range(0, W - PATCH_SIZE + 1, W_STRIDE)) or [0]
     h_starts = list(range(0, H - PATCH_SIZE + 1, H_STRIDE)) or [0]
 
-    all_scores = []   # list of scalar tensors (LPIPS/10 per patch)
-    all_features = [] # list of (12, 256, 4, 4) tensors (extractor features per patch)
+    all_scores = []  # list of scalar tensors (LPIPS/10 per patch)
+    all_features = []  # list of (12, 256, 4, 4) tensors (extractor features per patch)
 
     # Loop order matches dataset: temporal × width × height
     for tw_start in tw_starts:
-        xw = xp[:, tw_start:tw_start + FRAMES_PER_WIN]  # [1, 12, C, H, W]
-        yw = yp[:, tw_start:tw_start + FRAMES_PER_WIN]
+        xw = xp[:, tw_start : tw_start + FRAMES_PER_WIN]  # [1, 12, C, H, W]
+        yw = yp[:, tw_start : tw_start + FRAMES_PER_WIN]
 
         for w_start in w_starts:
             for h_start in h_starts:
-                xpatch = xw[:, :, :, h_start:h_start + PATCH_SIZE, w_start:w_start + PATCH_SIZE]
-                ypatch = yw[:, :, :, h_start:h_start + PATCH_SIZE, w_start:w_start + PATCH_SIZE]
+                xpatch = xw[
+                    :,
+                    :,
+                    :,
+                    h_start : h_start + PATCH_SIZE,
+                    w_start : w_start + PATCH_SIZE,
+                ]
+                ypatch = yw[
+                    :,
+                    :,
+                    :,
+                    h_start : h_start + PATCH_SIZE,
+                    w_start : w_start + PATCH_SIZE,
+                ]
                 # both: [1, 12, 3, 256, 256] in [0, 1]
 
                 # Stage 1: LPIPS_3D_Diff score.
@@ -209,13 +249,19 @@ def compute_stanet_score(x_single, y_single, model, stanet, extractor, scaling_l
 
                 # Stage 2 features: extractor uses distorted (y) video only, as in dataset.
                 # Dataset applies scaling_layer to [-1,1] input → we convert [0,1]→[-1,1] first.
-                y_flat = ypatch.view(FRAMES_PER_WIN, C, PATCH_SIZE, PATCH_SIZE)  # [12, 3, 256, 256]
+                y_flat = ypatch.view(
+                    FRAMES_PER_WIN, C, PATCH_SIZE, PATCH_SIZE
+                )  # [12, 3, 256, 256]
                 y_scaled = scaling_layer(2.0 * y_flat - 1.0)  # ImageNet normalization
                 feats = extractor(y_scaled)
                 # Level 3 (index 2): [12, 64, 32, 32] → downsample to [12, 64, 4, 4]
-                feat_l3 = F.interpolate(feats[2], size=(4, 4), mode='bilinear', align_corners=True)
+                feat_l3 = F.interpolate(
+                    feats[2], size=(4, 4), mode="bilinear", align_corners=True
+                )
                 feat_l6 = feats[5]  # [12, 192, 4, 4]
-                all_features.append(torch.cat([feat_l3, feat_l6], dim=1))  # [12, 256, 4, 4]
+                all_features.append(
+                    torch.cat([feat_l3, feat_l6], dim=1)
+                )  # [12, 256, 4, 4]
 
     # Tile patches to exactly N_TARGET = 1440 (STANet hardcodes this shape)
     n = len(all_scores)

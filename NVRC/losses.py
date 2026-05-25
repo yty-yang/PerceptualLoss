@@ -200,23 +200,18 @@ def rankdvqa(x, y):
     Compute RankDVQA loss using Stage 1 (LPIPS_3D_Diff) + Stage 2 (STANet).
 
     STANet outputs a perceptual quality score derived from weighted patch scores.
-    The score is used directly as the loss (higher score = more distortion = higher loss).
-    The returned loss is broadcast to all frames: shape [N, T].
-
-    x: original frames [N, C, T, H, W] in [0, 1]
-    y: reconstructed frames [N, C, T, H, W] in [0, 1]
     """
     model = get_rankdvqa_model(x.device)
     stanet = get_stanet_model(x.device)
     extractor = get_extractor(x.device)
     scaling_layer = get_scaling_layer(x.device)
 
-    N, C, T, H, W = x.shape
+    N, _, T, _, _ = x.shape
     per_sample = []
 
     for n in range(N):
         quality = compute_stanet_score(
-            x[n:n+1], y[n:n+1], model, stanet, extractor, scaling_layer
+            x[n : n + 1], y[n : n + 1], model, stanet, extractor, scaling_layer
         )
         # quality is the weighted mean of LPIPS_3D_Diff patch scores (÷10).
         # Higher = more distortion → use directly as loss, broadcast to all frames.
@@ -232,9 +227,9 @@ def wd(x, y, sigma_const=8.0):
     """
     N, _, T, H, W = x.shape
     # Create constant log2_sigma map [N, 1, H, W]
-    log2_sigma = (
-        torch.zeros(N, 1, H, W, device=x[0].device, dtype=x.dtype) + torch.log2(torch.tensor(sigma_const))
-    )
+    log2_sigma = torch.zeros(
+        N, 1, H, W, device=x[0].device, dtype=x.dtype
+    ) + torch.log2(torch.tensor(sigma_const))
     wloss = get_wloss(x[0].device)
     loss = torch.empty(N, T, device=x[0].device)
     for t in range(T):
