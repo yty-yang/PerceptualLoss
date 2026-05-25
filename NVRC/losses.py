@@ -197,51 +197,33 @@ def ms_ssim_y(x, y, v_max=1.0, win_size=11):
 
 def rankdvqa(x, y):
     """
-    Compute RANKDVQA loss using Stage 1 (PQANet) + Stage 2 (STANet).
-    Stage 2 outputs 0-100 quality score (higher is better).
-    Loss = (100 - score) / 100, normalized to [0, 1], lower is better.
+    Compute RankDVQA loss using Stage 1 (LPIPS_3D_Diff) + Stage 2 (STANet).
 
-    x: original frames [N, C, T, H, W]
-    y: reconstructed frames [N, C, T, H, W]
+    STANet outputs a perceptual quality score derived from weighted patch scores.
+    The score is used directly as the loss (higher score = more distortion = higher loss).
+    The returned loss is broadcast to all frames: shape [N, T].
 
-    Stage 2 expects grid [10, 9, 16] = 1440 patches per window.
-    Each patch is 256x256 spatially, with 16 frames per window.
+    x: original frames [N, C, T, H, W] in [0, 1]
+    y: reconstructed frames [N, C, T, H, W] in [0, 1]
     """
-    model = get_rankdvqa_model(x[0].device)
-    stanet = get_stanet_model(x[0].device)
-    extractor = get_extractor(x[0].device)
-    scaling_layer = get_scaling_layer(x[0].device)
+    model = get_rankdvqa_model(x.device)
+    stanet = get_stanet_model(x.device)
+    extractor = get_extractor(x.device)
+    scaling_layer = get_scaling_layer(x.device)
 
     N, C, T, H, W = x.shape
+    per_sample = []
 
-    # STANet expects 16 frames per window (TP=16), 10x9 spatial patches (HP=9, WP=10)
-    TP, WP, HP = 16, 10, 9
-    patch_size = 256
+    for n in range(N):
+        quality = compute_stanet_score(
+            x[n:n+1], y[n:n+1], model, stanet, extractor, scaling_layer
+        )
+        # quality is the weighted mean of LPIPS_3D_Diff patch scores (÷10).
+        # Higher = more distortion → use directly as loss, broadcast to all frames.
+        # unsqueeze then expand keeps the autograd graph intact (no in-place ops).
+        per_sample.append(quality.unsqueeze(0).expand(T))
 
-    # Calculate if T fits one window or needs sliding
-    if T <= TP:
-        # Pad to TP frames by repeating last frame
-        pad = TP - T
-        x_padded = torch.cat([x, x[:, :, -1:].expand(N, C, pad, H, W)], dim=2)
-        y_padded = torch.cat([y, y[:, :, -1:].expand(N, C, pad, H, W)], dim=2)
-        return compute_stanet_score(x_padded, y_padded, model, stanet, extractor, scaling_layer, N, C, TP, H, W, WP, HP, patch_size)
-    else:
-        # Sliding windows
-        stride = TP // 2  # 50% overlap
-        starts = list(range(0, T - TP + 1, stride))
-        if starts[-1] + TP < T:
-            starts.append(T - TP)
-
-        window_scores = []
-        for start in starts:
-            x_win = x[:, :, start:start+TP]
-            y_win = y[:, :, start:start+TP]
-            score = compute_stanet_score(x_win, y_win, model, stanet, extractor, scaling_layer, N, C, TP, H, W, WP, HP, patch_size)
-            window_scores.append(score)  # (N, 1)
-
-        # Average over windows, broadcast to per-frame
-        final_score = torch.stack(window_scores, dim=1).mean(dim=1)  # (N,)
-        return final_score.unsqueeze(1).repeat(1, T)  # (N, T)
+    return torch.stack(per_sample, dim=0)  # (N, T)
 
 
 def wd(x, y, sigma_const=8.0):
