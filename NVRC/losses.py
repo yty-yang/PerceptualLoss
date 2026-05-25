@@ -215,7 +215,9 @@ def rankdvqa(x, y):
         # quality ≤ 0 for meaningful reconstructions (LPIPS_3D_Diff outputs negative for bad quality).
         # Clamp to max=0 before negating: prevents adversarial solutions where quality goes positive,
         # which would drive d_loss negative and cause training collapse.
-        per_sample.append(-quality.clamp(max=0).unsqueeze(0).expand(T))
+        per_sample.append(
+            -quality.clamp(max=0).unsqueeze(0).expand(T)
+        )  # TODO: the clamp isn't resonable
 
     return torch.stack(per_sample, dim=0)  # (N, T)
 
