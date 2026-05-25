@@ -211,12 +211,12 @@ def rankdvqa(x, y):
 
     for n in range(N):
         quality = compute_stanet_score(
-            x[n : n + 1], y[n : n + 1], model, stanet, extractor, scaling_layer
+            y[n : n + 1], x[n : n + 1], model, stanet, extractor, scaling_layer
         )
-        # quality is the weighted mean of LPIPS_3D_Diff patch scores (÷10).
-        # Higher = more distortion → use directly as loss, broadcast to all frames.
+        # quality is the STANet quality score (higher = better quality).
+        # Negate so minimizing loss = maximizing quality; broadcast to all frames.
         # unsqueeze then expand keeps the autograd graph intact (no in-place ops).
-        per_sample.append(quality.unsqueeze(0).expand(T))
+        per_sample.append(-quality.unsqueeze(0).expand(T))
 
     return torch.stack(per_sample, dim=0)  # (N, T)
 
