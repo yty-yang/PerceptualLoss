@@ -1,0 +1,4 @@
+codec,video,experiment,stage,loss,config,lr,lambda,bpp,psnr,ms_ssim,ms_ssim_metric,size_bytes,train_time_s
+NVRC,BasketballDrive_1920x1080_50,nvrc_uvg_hinerv-v2-s_1920x1080_x1x144_lamb-1.0_lr-1e-4_s2,s2,baseline,x1x144,1e-4,1.0,0.0108,31.3741,0.9575,ms-ssim_avg,11212256,1764.0292
+NVRC,BasketballDrive_1920x1080_50,nvrc_uvg_hinerv-v2-s_1920x1080_x1x144_lamb-1.0_lr-1e-4_wd_s2,s2,wd,x1x144,1e-4,1.0,0.0456,30.0828,0.9365,ms-ssim-5x5_avg,47281088,3641.3315
+NVRC,BasketballDrive_1920x1080_50,nvrc_uvg_hinerv-v2-s_1920x1080_x8x80_lamb-1.0_lr-1e-4_wd_s2,s2,wd,x8x80,1e-4,1.0,0.0412,29.0451,0.9295,ms-ssim_avg,42737824,1966.0861
