@@ -76,6 +76,11 @@ class WassersteinDistortionFeature(nn.Module):
         log2_sigma: Tensor,
     ) -> Tensor:
         """Calculates the Wasserstein distortion between two feature maps."""
+        # fp16 overflows when squaring deep VGG features; bf16 has fp32 exponent range
+        if features_a.dtype == torch.float16:
+            features_a = features_a.to(torch.bfloat16)
+            features_b = features_b.to(torch.bfloat16)
+            log2_sigma = log2_sigma.to(torch.bfloat16)
         mean_pyr_a, var_pyr_a = self.multi_level_stats(features_a)
         mean_pyr_b, var_pyr_b = self.multi_level_stats(features_b)
         wd_maps = [torch.square(features_a - features_b)]
@@ -262,32 +267,24 @@ class VGG16WassersteinDistortion(nn.Module):
                 f"Predicted and ground truth images must have the same shape, "
                 f"but got {pred.shape} and {gt.shape}."
             )
-        # VGG features and their squared values can overflow fp16 under autocast,
-        # causing 0*inf=NaN in WassersteinDistortionFeature when sigma weights are
-        # zero at certain pyramid levels. Force fp32 for the entire WD computation.
-        device_type = pred.device.type
-        with torch.autocast(device_type=device_type, enabled=False):
-            pred = pred.float()
-            gt = gt.float()
-            log2_sigma = log2_sigma.float()
-            feats_pred = self.feature_backbone(pred, num_scales=num_scales)
-            feats_gt = self.feature_backbone(gt, num_scales=num_scales)
+        feats_pred = self.feature_backbone(pred, num_scales=num_scales)
+        feats_gt = self.feature_backbone(gt, num_scales=num_scales)
 
-            wasserstein_dist = 0
-            assert len(feats_pred) == len(feats_gt)
-            for fp, fgt in zip(feats_pred, feats_gt):
-                ls = F.interpolate(
-                    log2_sigma, size=fgt.shape[-2:], mode="bilinear", antialias=False
-                )
-                # Rescale sigma to match the feature arrays. For example, if a feature array
-                # has a very low spatial resolution, we make sigma correspondingly smaller,
-                # because each element in the feature array covers a larger portion of the
-                # image. Since we are in log space, we subtract the log of the size ratio and
-                # then cap at zero.
-                log_ratio_h = np.log2(log2_sigma.shape[-2] / fgt.shape[-2])
-                log_ratio_w = np.log2(log2_sigma.shape[-1] / fgt.shape[-1])
-                mean_log_ratio = (log_ratio_h + log_ratio_w) / 2
-                ls = F.relu(ls - mean_log_ratio)
-                wasserstein_dist += self.wasserstein_distortion_feature(fp, fgt, ls)
+        wasserstein_dist = 0
+        assert len(feats_pred) == len(feats_gt)
+        for fp, fgt in zip(feats_pred, feats_gt):
+            ls = F.interpolate(
+                log2_sigma, size=fgt.shape[-2:], mode="bilinear", antialias=False
+            )
+            # Rescale sigma to match the feature arrays. For example, if a feature array
+            # has a very low spatial resolution, we make sigma correspondingly smaller,
+            # because each element in the feature array covers a larger portion of the
+            # image. Since we are in log space, we subtract the log of the size ratio and
+            # then cap at zero.
+            log_ratio_h = np.log2(log2_sigma.shape[-2] / fgt.shape[-2])
+            log_ratio_w = np.log2(log2_sigma.shape[-1] / fgt.shape[-1])
+            mean_log_ratio = (log_ratio_h + log_ratio_w) / 2
+            ls = F.relu(ls - mean_log_ratio)
+            wasserstein_dist += self.wasserstein_distortion_feature(fp, fgt, ls)
         assert isinstance(wasserstein_dist, Tensor)
         return wasserstein_dist
