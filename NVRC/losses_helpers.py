@@ -147,6 +147,7 @@ def get_saliency_model(device):
     return _saliency_model
 
 
+@torch.compiler.disable
 def compute_saliency_cached(x_flat: torch.Tensor) -> torch.Tensor:
     """Return saliency maps for x_flat, using cache when x content hasn't changed."""
     global _saliency_cache_key, _saliency_cache_val

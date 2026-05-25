@@ -4,7 +4,7 @@
 
 GPU_ID=0
 VID=Test_50frame
-LAMB=1.0
+LAMB=10.0
 SCALE=s
 LR_S1=2e-3
 LR_S2=1e-4
