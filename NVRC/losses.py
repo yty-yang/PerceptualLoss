@@ -260,8 +260,9 @@ def wd_saliency(x, y, sigma_max=16.0, pmin=0.5, scale=0.02):
     # Batch all T frames into one forward pass: [N, C, T, H, W] → [N*T, C, H, W]
     frames_all = x.permute(0, 2, 1, 3, 4).contiguous().view(N * T, C, H, W)
     with torch.no_grad():
-        s_all = saliency_model(frames_all)  # [N*T, 1, H, W]
-    s_all = s_all.view(N, T, 1, H, W)  # [N, T, 1, H, W]
+        s_all = saliency_model(frames_all)  # [N*T, 1, h_s, w_s]
+    _, _, h_s, w_s = s_all.shape
+    s_all = s_all.view(N, T, 1, h_s, w_s)  # [N, T, 1, h_s, w_s]
 
     for t in range(T):
         frame = x[:, :, t]  # [N, C, H, W]
