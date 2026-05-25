@@ -11,13 +11,15 @@ from NVRC.loss_models.WassersteinDistortion.wasserstein_distortion import (
 import NVRC.loss_models.EMLNETSaliency.resnet as resnet
 import NVRC.loss_models.EMLNETSaliency.decoder as decoder
 
-# Model singletons
+# singletons
 _rankdvqa_model = None
 _stanet_model = None
 _extractor = None
 _scaling_layer = None
 _wloss = None
 _saliency_model = None
+_saliency_cache_key: tuple | None = None
+_saliency_cache_val: torch.Tensor | None = None
 
 
 def check_shape(x, y):
@@ -143,6 +145,20 @@ def get_saliency_model(device):
     if _saliency_model is None:
         _saliency_model = SaliencyEMLNET(device=device)
     return _saliency_model
+
+
+def compute_saliency_cached(x_flat: torch.Tensor) -> torch.Tensor:
+    """Return saliency maps for x_flat, using cache when x content hasn't changed."""
+    global _saliency_cache_key, _saliency_cache_val
+    saliency_model = get_saliency_model(x_flat.device)
+    stride = max(1, x_flat.numel() // 128)
+    checksum = x_flat.reshape(-1)[::stride].sum().item()
+    key = (x_flat.shape, checksum)
+    if key != _saliency_cache_key or _saliency_cache_val is None:
+        with torch.no_grad():
+            _saliency_cache_val = saliency_model(x_flat)
+        _saliency_cache_key = key
+    return _saliency_cache_val
 
 
 def compute_stanet_score(x_single, y_single, model, stanet, extractor, scaling_layer):
