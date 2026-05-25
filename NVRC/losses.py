@@ -214,9 +214,9 @@ def rankdvqa(x, y):
             y[n : n + 1], x[n : n + 1], model, stanet, extractor, scaling_layer
         )
         # quality is the STANet quality score (higher = better quality).
-        # Negate so minimizing loss = maximizing quality; broadcast to all frames.
+        # Sigmoid bounds to (0, 1), negate so minimizing loss = maximizing quality.
         # unsqueeze then expand keeps the autograd graph intact (no in-place ops).
-        per_sample.append(-quality.unsqueeze(0).expand(T))
+        per_sample.append(1 - torch.sigmoid(quality).unsqueeze(0).expand(T))
 
     return torch.stack(per_sample, dim=0)  # (N, T)
 
