@@ -284,7 +284,7 @@ def wd_saliency(x, y, sigma_max=16.0, pmin=0.5):
         frame = x[:, :, t]  # [N, C, H, W]
         with torch.no_grad():
             s = saliency_model(frame)  # [N, 1, H, W], in [0, 1]
-        s_mean = s.mean()  # spatial mean s̄
+        s_mean = s.mean(dim=[1, 2, 3], keepdim=True)  # [N, 1, 1, 1]
         # Eq (3): p = pmin + (1 - pmin) * s / s_mean
         p = pmin + (1 - pmin) * s / (s_mean + 1e-8)
         # Eq (4): sigma = sigma_max * pmin / p
