@@ -212,10 +212,10 @@ def rankdvqa(x, y):
         quality = compute_stanet_score(
             y[n : n + 1], x[n : n + 1], model, stanet, extractor, scaling_layer
         )
-        # quality is the STANet quality score (higher = better quality).
-        # Sigmoid bounds to (0, 1), negate so minimizing loss = maximizing quality.
-        # unsqueeze then expand keeps the autograd graph intact (no in-place ops).
-        per_sample.append(-quality.unsqueeze(0).expand(T))
+        # quality ≤ 0 for meaningful reconstructions (LPIPS_3D_Diff outputs negative for bad quality).
+        # Clamp to max=0 before negating: prevents adversarial solutions where quality goes positive,
+        # which would drive d_loss negative and cause training collapse.
+        per_sample.append(-quality.clamp(max=0).unsqueeze(0).expand(T))
 
     return torch.stack(per_sample, dim=0)  # (N, T)
 

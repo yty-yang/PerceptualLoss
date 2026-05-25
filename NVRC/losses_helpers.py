@@ -159,6 +159,7 @@ def compute_saliency_cached(x_flat: torch.Tensor) -> torch.Tensor:
         with torch.no_grad():
             _saliency_cache_val = saliency_model(x_flat)
         _saliency_cache_key = key
+    assert _saliency_cache_val is not None
     return _saliency_cache_val
 
 
