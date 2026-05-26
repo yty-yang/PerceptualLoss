@@ -28,9 +28,15 @@ def parse_name(name: str) -> dict:
     config_m = re.search(r"_(x\d+x\d+)_", name)
     lr_m = re.search(r"_lr-([^_]+)_", name)
     lamb_m = re.search(r"_lamb-([^_]+)_", name)
+    if "_wd-saliency_" in name:
+        loss = "wd-saliency"
+    elif "_wd_" in name:
+        loss = "wd"
+    else:
+        loss = "baseline"
     return {
         "stage": stage_m.group(1) if stage_m else None,
-        "loss": "wd" if "_wd_" in name else "baseline",
+        "loss": loss,
         "config": config_m.group(1) if config_m else None,
         "lr": lr_m.group(1) if lr_m else None,
         "lambda": lamb_m.group(1) if lamb_m else None,
@@ -115,20 +121,21 @@ METRICS = {
 def plot_rd(df: pd.DataFrame, plots_dir: Path):
     plots_dir.mkdir(parents=True, exist_ok=True)
 
-    for metric, ylabel in METRICS.items():
-        fig, ax = plt.subplots(figsize=(8, 6))
-        for (config, loss), grp in sorted(df.groupby(["config", "loss"])):
-            grp = grp.sort_values("bpp")
-            ax.plot(grp["bpp"], grp[metric], marker="o", label=f"{config} / {loss}")
-        ax.set_xlabel("BPP")
-        ax.set_ylabel(ylabel)
-        ax.set_title(f"RD Curve — {ylabel}")
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        out = plots_dir / f"rd_{metric}.png"
-        fig.savefig(out, dpi=150, bbox_inches="tight")
-        plt.close(fig)
-        print(f"Saved {out}")
+    for video, vdf in sorted(df.groupby("video")):
+        for metric, ylabel in METRICS.items():
+            fig, ax = plt.subplots(figsize=(8, 6))
+            for (config, loss), grp in sorted(vdf.groupby(["config", "loss"])):
+                grp = grp.sort_values("bpp")
+                ax.plot(grp["bpp"], grp[metric], marker="o", label=f"{config} / {loss}")
+            ax.set_xlabel("BPP")
+            ax.set_ylabel(ylabel)
+            ax.set_title(f"RD Curve — {ylabel} — {video}")
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+            out = plots_dir / f"rd_{metric}_{video}.png"
+            fig.savefig(out, dpi=150, bbox_inches="tight")
+            plt.close(fig)
+            print(f"Saved {out}")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
