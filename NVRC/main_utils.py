@@ -18,7 +18,6 @@ torch.set_float32_matmul_precision('high')
 
 dynamo.config.verbose = True
 dynamo.config.cache_size_limit = 24
-dynamo.config.compiled_autograd = True
 
 deepspeed.utils.logger.setLevel('WARNING')
 

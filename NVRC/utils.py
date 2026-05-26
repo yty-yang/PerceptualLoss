@@ -88,6 +88,11 @@ def get_accelerator_logger(args):
     accelerator = accelerate.Accelerator(project_config=accelerate.utils.ProjectConfiguration(save_on_each_node=True),
                                          dataloader_config=accelerate.DataLoaderConfiguration(non_blocking=True))
 
+    # compiled_autograd is only compatible with the inductor backend
+    dynamo.config.compiled_autograd = (
+        accelerator.state.dynamo_plugin.backend == accelerate.utils.DynamoBackend.INDUCTOR
+    )
+
     # Prepare output dir & save configurations
     output_dir = get_output_path(args)
     if accelerator.is_main_process:
