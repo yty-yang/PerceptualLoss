@@ -42,13 +42,13 @@ from models.layers import is_network_param, is_grid_param
 def _patch_inductor_tiling():
     try:
         import torch._inductor.tiling_utils as _tu
-        _orig = _tu.get_pw_red_splits
-        def _safe(n, pointwise_numel, red_numel, none_if_not_divisible=False):
+        _orig = _tu.analyze_memory_coalescing
+        def _safe(node):
             try:
-                return _orig(n, pointwise_numel, red_numel, none_if_not_divisible)
-            except AssertionError:
+                return _orig(node)
+            except (AssertionError, TypeError):
                 return None
-        _tu.get_pw_red_splits = _safe
+        _tu.analyze_memory_coalescing = _safe
     except Exception:
         pass
 _patch_inductor_tiling()
