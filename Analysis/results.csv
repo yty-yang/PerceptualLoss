@@ -4,4 +4,4 @@ NVRC,BasketballDrive_1920x1080_50,nvrc_uvg_hinerv-v2-s_1920x1080_x1x144_lamb-1.0
 NVRC,BasketballDrive_1920x1080_50,nvrc_uvg_hinerv-v2-s_1920x1080_x8x80_lamb-1.0_lr-1e-4_wd_s2,s2,wd,x8x80,1e-4,1.0,0.0412,29.0451,0.9295,ms-ssim_avg,42737824,1966.0861
 NVRC,Test_50frame,nvrc_uvg_hinerv-v2-s_1920x1080_x1x144_lamb-10.0_lr-1e-4_s2,s2,baseline,x1x144,1e-4,10.0,0.0401,14.6321,0.5003,ms-ssim_avg,4157728,400.1626
 NVRC,Test_50frame,nvrc_uvg_hinerv-v2-s_1920x1080_x1x144_lamb-10.0_lr-1e-4_wd_s2,s2,wd,x1x144,1e-4,10.0,0.207,31.2358,0.9586,ms-ssim-5x5_avg,21466720,542.2107
-NVRC,Test_50frame,nvrc_uvg_hinerv-v2-s_1920x1080_x2x72_lamb-10.0_lr-1e-4_wd-saliency_s2,s2,wd-saliency,x2x72,1e-4,10.0,0.2036,33.1003,0.9591,ms-ssim-5x5_avg,21107328,1243.9516
+NVRC,Test_50frame,nvrc_uvg_hinerv-v2-s_1920x1080_x2x72_lamb-10.0_lr-1e-4_wd-saliency_s2,s2,wd-saliency,x2x72,1e-4,10.0,0.2052,32.9076,0.9585,ms-ssim-5x5_avg,21278432,756.7514
