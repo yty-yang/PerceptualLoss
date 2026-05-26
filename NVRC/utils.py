@@ -35,6 +35,24 @@ import accelerate
 
 from models.layers import is_network_param, is_grid_param
 
+# Workaround for PyTorch inductor bug: tiling_utils.get_pw_red_splits raises
+# AssertionError when a fused node's body sizes don't match pointwise*reduction
+# numel (triggered by certain VGG/interpolation op shapes). Returning None is
+# the correct "can't compute splits" result and skips the bad tiling path.
+def _patch_inductor_tiling():
+    try:
+        import torch._inductor.tiling_utils as _tu
+        _orig = _tu.get_pw_red_splits
+        def _safe(n, pointwise_numel, red_numel, none_if_not_divisible=False):
+            try:
+                return _orig(n, pointwise_numel, red_numel, none_if_not_divisible)
+            except AssertionError:
+                return None
+        _tu.get_pw_red_splits = _safe
+    except Exception:
+        pass
+_patch_inductor_tiling()
+
 
 """
 Tools
