@@ -58,36 +58,39 @@ class OverfitTask:
         self.video.create_cache(enable=self.enable_log)
 
     def precompute_saliency(self, dataset, batch_size: int = 8) -> None:
-        """Precompute saliency maps for all frames in the current group (once before training)."""
+        """Precompute per-frame saliency maps once before training.
+
+        Runs the saliency model on full frames (not crops), storing [T, 1, h_s, w_s] on CPU.
+        During training, wd_saliency crops the appropriate spatial region per patch.
+        Only supported when the video cache is a 4-D numpy array (PNGVideo).
+        """
         if not any(loss_type == 'wd-saliency' for loss_type in self.loss_cfg[1::2]):
+            return
+
+        video = dataset.video
+        cache = getattr(video, 'cache', None)
+        if cache is None or not (hasattr(cache, 'ndim') and cache.ndim == 4):
+            self.logger.info('Saliency precomputation skipped: unsupported video format.')
             return
 
         device = self.device
         T_total = dataset.get_num_frames()
-        T_patch = dataset.get_patch_size()[0]
-        C = dataset.get_num_channels()
-        H, W = dataset.get_video_size()[1], dataset.get_video_size()[2]
-
-        # Collect all frames into a contiguous tensor, ordered by temporal index
-        all_frames = torch.zeros(T_total, C, H, W)
-        loader = torch.utils.data.DataLoader(
-            dataset, batch_size=batch_size, shuffle=False, num_workers=0
-        )
-        for idx_thw, patches in loader:
-            # patches: [B, C, T_patch, H, W]
-            t_starts = (idx_thw[:, 0] * T_patch).tolist()
-            for i, t_start in enumerate(t_starts):
-                all_frames[t_start:t_start + T_patch] = patches[i].permute(1, 0, 2, 3)
-
-        # Run saliency model in batches on GPU, store result on CPU
         saliency_model = get_saliency_model(device)
+
+        scale = dataset.channel_scale.view(1, -1, 1, 1)
+        shift = dataset.channel_shift.view(1, -1, 1, 1)
+
         results = []
         for i in range(0, T_total, batch_size):
-            batch_frames = all_frames[i:i + batch_size].to(device)
+            # cache: [T, H, W, C] numpy → [B, C, H, W] float tensor
+            batch_np = cache[i:i + batch_size]
+            batch_t = torch.from_numpy(batch_np.astype(np.float32)).permute(0, 3, 1, 2)
+            batch_t = (batch_t * scale + shift).clamp(0, 1).to(device)
             with torch.no_grad():
-                results.append(saliency_model(batch_frames).cpu())
-        self._saliency_cache = torch.cat(results, dim=0)  # [T_total, 1, h_s, w_s]
-        self.logger.info(f'Precomputed saliency cache shape: {self._saliency_cache.shape}')
+                results.append(saliency_model(batch_t).cpu())
+
+        self._saliency_cache = torch.cat(results, dim=0)  # [T, 1, h_s, w_s]
+        self.logger.info(f'Precomputed saliency cache: {self._saliency_cache.shape}')
 
     def parse_batch(self, batch):
         """
@@ -123,9 +126,9 @@ class OverfitTask:
         """
         return output.contiguous()
 
-    def compute_d_loss(self, x, y, lamb, frame_indices: torch.Tensor | None = None):
-        if self._saliency_cache is not None and frame_indices is not None:
-            set_saliency_context(self._saliency_cache, frame_indices.cpu())
+    def compute_d_loss(self, x, y, lamb, patch_coords=None, idx_max=None):
+        if self._saliency_cache is not None and patch_coords is not None:
+            set_saliency_context(self._saliency_cache, patch_coords.cpu(), idx_max)
         try:
             loss = 0.
             for i in range(len(self.loss_cfg) // 2):
@@ -150,8 +153,11 @@ class OverfitTask:
         inputs, target = self.parse_batch(batch)
         output = model(inputs, compute_outputs=True, compute_rates=False)
         output = self.parse_output(output)
-        frame_indices = inputs['idx'][:, 0] * self.get_patch_size()[0]
-        loss = self.compute_d_loss(output, target, inputs['lamb'], frame_indices=frame_indices)
+        loss = self.compute_d_loss(
+            output, target, inputs['lamb'],
+            patch_coords=inputs['idx'],
+            idx_max=inputs['idx_max'],
+        )
         metrics = self.compute_metrics(output, target)
         return inputs, target, output, loss, metrics
 

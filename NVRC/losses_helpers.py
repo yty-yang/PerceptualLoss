@@ -18,28 +18,29 @@ _extractor = None
 _scaling_layer = None
 _wloss = None
 _saliency_model = None
-_saliency_cache_key: tuple | None = None
-_saliency_cache_val: torch.Tensor | None = None
 
 # precomputed saliency context (set before compute_loss, cleared after)
 _saliency_precomputed: torch.Tensor | None = None   # [T_total, 1, h_s, w_s] on CPU
-_saliency_frame_indices: torch.Tensor | None = None  # [N] CPU int tensor
+_saliency_patch_coords: torch.Tensor | None = None  # [N, 3] CPU tensor: (t_idx, h_idx, w_idx)
+_saliency_idx_max: tuple | None = None              # (T_max, H_max, W_max) patch grid size
 
 
-def set_saliency_context(saliency: torch.Tensor, frame_indices: torch.Tensor) -> None:
-    global _saliency_precomputed, _saliency_frame_indices
+def set_saliency_context(saliency: torch.Tensor, patch_coords: torch.Tensor, idx_max: tuple) -> None:
+    global _saliency_precomputed, _saliency_patch_coords, _saliency_idx_max
     _saliency_precomputed = saliency
-    _saliency_frame_indices = frame_indices
+    _saliency_patch_coords = patch_coords
+    _saliency_idx_max = idx_max
 
 
 def clear_saliency_context() -> None:
-    global _saliency_precomputed, _saliency_frame_indices
+    global _saliency_precomputed, _saliency_patch_coords, _saliency_idx_max
     _saliency_precomputed = None
-    _saliency_frame_indices = None
+    _saliency_patch_coords = None
+    _saliency_idx_max = None
 
 
 def get_saliency_context():
-    return _saliency_precomputed, _saliency_frame_indices
+    return _saliency_precomputed, _saliency_patch_coords, _saliency_idx_max
 
 
 def check_shape(x, y):
@@ -166,21 +167,6 @@ def get_saliency_model(device):
         _saliency_model = SaliencyEMLNET(device=device)
     return _saliency_model
 
-
-@torch.compiler.disable
-def compute_saliency_cached(x_flat: torch.Tensor) -> torch.Tensor:
-    """Return saliency maps for x_flat, using cache when x content hasn't changed."""
-    global _saliency_cache_key, _saliency_cache_val
-    saliency_model = get_saliency_model(x_flat.device)
-    stride = max(1, x_flat.numel() // 128)
-    checksum = x_flat.reshape(-1)[::stride].sum().item()
-    key = (x_flat.shape, checksum)
-    if key != _saliency_cache_key or _saliency_cache_val is None:
-        with torch.no_grad():
-            _saliency_cache_val = saliency_model(x_flat)
-        _saliency_cache_key = key
-    assert _saliency_cache_val is not None
-    return _saliency_cache_val
 
 
 def compute_stanet_score(x_single, y_single, model, stanet, extractor, scaling_layer):

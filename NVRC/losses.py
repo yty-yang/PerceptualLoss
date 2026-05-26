@@ -12,7 +12,6 @@ from NVRC.losses_helpers import (
     get_extractor,
     get_scaling_layer,
     get_wloss,
-    compute_saliency_cached,
     compute_stanet_score,
     get_saliency_context,
 )
@@ -260,19 +259,29 @@ def wd_saliency(x, y, sigma_max=16.0, pmin=0.5, scale=0.02):
     wloss = get_wloss(x[0].device)
     loss = torch.empty(N, T, device=x[0].device)
 
-    precomputed_saliency, frame_indices = get_saliency_context()
-    if precomputed_saliency is not None and frame_indices is not None:
-        # Look up precomputed saliency without running the model
-        _, _, h_s, w_s = precomputed_saliency.shape
-        fi = frame_indices.tolist()
-        flat_idx = [fi[n] + t for n in range(N) for t in range(T)]
-        s_all = precomputed_saliency[flat_idx].view(N, T, 1, h_s, w_s).to(x.device)
-    else:
-        # Batch all T frames into one forward pass: [N, C, T, H, W] → [N*T, C, H, W]
-        frames_all = x.permute(0, 2, 1, 3, 4).contiguous().view(N * T, C, H, W)
-        s_all = compute_saliency_cached(frames_all)  # [N*T, 1, h_s, w_s]
-        _, _, h_s, w_s = s_all.shape
-        s_all = s_all.view(N, T, 1, h_s, w_s)  # [N, T, 1, h_s, w_s]
+    precomputed_saliency, patch_coords, idx_max = get_saliency_context()
+    if precomputed_saliency is None or patch_coords is None:
+        raise RuntimeError("wd-saliency requires precomputed saliency context. Call precompute_saliency() before training.")
+
+    # Crop per-frame saliency [T_total, 1, h_s, w_s] to each patch's spatial region.
+    _, _, h_s, w_s = precomputed_saliency.shape
+    H_max, W_max = idx_max[1], idx_max[2]
+    crop_h = h_s // H_max
+    crop_w = w_s // W_max
+    crops = []
+    for n in range(N):
+        h_n, w_n = patch_coords[n, 1].item(), patch_coords[n, 2].item()
+        y0, x0 = h_n * h_s // H_max, w_n * w_s // W_max
+        y1, x1 = (h_n + 1) * h_s // H_max, (w_n + 1) * w_s // W_max
+        per_t = []
+        for t_step in range(T):
+            t_frame = patch_coords[n, 0].item() * T + t_step
+            c = precomputed_saliency[t_frame, :, y0:y1, x0:x1]  # [1, raw_h, raw_w]
+            c = F.interpolate(c.unsqueeze(0), size=(crop_h, crop_w),
+                              mode='bilinear', antialias=False).squeeze(0)
+            per_t.append(c)
+        crops.append(torch.stack(per_t, dim=0))  # [T, 1, crop_h, crop_w]
+    s_all = torch.stack(crops, dim=0).to(x.device)  # [N, T, 1, crop_h, crop_w]
 
     for t in range(T):
         frame = x[:, :, t]  # [N, C, H, W]
