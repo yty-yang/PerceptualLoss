@@ -238,6 +238,7 @@ def wd(x, y, sigma_const=8.0, scale=0.02):
     return loss * scale
 
 
+@torch.compiler.disable
 def wd_saliency(x, y, sigma_max=16.0, pmin=0.5, scale=0.02):
     """
     Compute per-frame WD loss with saliency-based sigma-map.
