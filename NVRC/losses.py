@@ -274,7 +274,7 @@ def wd_saliency(x, y, sigma_max=16.0, pmin=0.5, scale=0.02):
         log2_sigma = torch.log2(sigma_max * pmin / p)
         # Upsample sigma-map to full resolution for wloss
         log2_sigma = F.interpolate(
-            log2_sigma, size=(H, W), mode="bilinear", antialias=True
+            log2_sigma, size=(H, W), mode="bilinear", antialias=False
         )
         loss[:, t] = wloss(frame, y[:, :, t], log2_sigma)
     return loss * scale
