@@ -98,9 +98,13 @@ case "${LOSS_TYPE}" in
         TRAIN_TASK_CFG=scripts/configs/tasks/overfit/${LOSS_TYPE}.yaml
         EVAL_TASK_CFG=scripts/configs/tasks/overfit/${LOSS_TYPE}.yaml
         ;;
+    l1_ms-ssim)
+        TRAIN_TASK_CFG=scripts/configs/tasks/overfit/l1_ms-ssim-5x5.yaml
+        EVAL_TASK_CFG=scripts/configs/tasks/overfit/l1_ms-ssim.yaml
+        ;;
     *)
         echo "Error: Unknown LOSS_TYPE '${LOSS_TYPE}'"
-        echo "  Available: wd, rankdvqa, wd-saliency"
+        echo "  Available: wd, rankdvqa, wd-saliency, l1_ms-ssim"
         exit 1
         ;;
 esac
