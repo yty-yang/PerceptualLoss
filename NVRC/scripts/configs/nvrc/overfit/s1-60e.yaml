@@ -1,6 +1,6 @@
-epochs: 360
-eval_epochs: 30
-warmup_epochs: 30
+epochs: 60
+eval_epochs: 5
+warmup_epochs: 5
 rate_steps: 8
 log_epochs: -2
 opt: adam

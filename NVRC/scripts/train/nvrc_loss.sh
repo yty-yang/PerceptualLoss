@@ -15,6 +15,7 @@ GRAD_ACCUM=1
 BATCH_SIZE=144
 LOSS_TYPE=wd
 EVAL_T_PATCH=1
+QUICK=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -70,6 +71,10 @@ while [[ $# -gt 0 ]]; do
             EVAL_T_PATCH="$2"
             shift 2
             ;;
+        -q | --quick)
+            QUICK=true
+            shift 1
+            ;;
         *)
             echo "Unknown option: $1"
             exit 1
@@ -106,8 +111,13 @@ COMPRESS_MODEL_CFG_S1=scripts/configs/nvrc/compress_models/nvrc_s1.yaml
 COMPRESS_MODEL_CFG_S2=scripts/configs/nvrc/compress_models/nvrc_s2.yaml
 MODEL_CFG_S1=scripts/configs/nvrc/models/uvg_hinerv-v2-${SCALE}_1920x1080.yaml
 MODEL_CFG_S2=${MODEL_CFG_S1}
-EXP_CFG_S1=scripts/configs/nvrc/overfit/s1-360e.yaml
-EXP_CFG_S2=scripts/configs/nvrc/overfit/s2-30e.yaml
+if [ "${QUICK}" = "true" ]; then
+    EXP_CFG_S1=scripts/configs/nvrc/overfit/s1-60e.yaml
+    EXP_CFG_S2=scripts/configs/nvrc/overfit/s2-5e.yaml
+else
+    EXP_CFG_S1=scripts/configs/nvrc/overfit/s1-360e.yaml
+    EXP_CFG_S2=scripts/configs/nvrc/overfit/s2-30e.yaml
+fi
 DATASET_DIR=${WORK_DIR}/Datasets/
 DATASET=${VID}
 START_FRAME=-1
