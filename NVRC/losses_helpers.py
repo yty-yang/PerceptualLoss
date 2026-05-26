@@ -21,6 +21,26 @@ _saliency_model = None
 _saliency_cache_key: tuple | None = None
 _saliency_cache_val: torch.Tensor | None = None
 
+# precomputed saliency context (set before compute_loss, cleared after)
+_saliency_precomputed: torch.Tensor | None = None   # [T_total, 1, h_s, w_s] on CPU
+_saliency_frame_indices: torch.Tensor | None = None  # [N] CPU int tensor
+
+
+def set_saliency_context(saliency: torch.Tensor, frame_indices: torch.Tensor) -> None:
+    global _saliency_precomputed, _saliency_frame_indices
+    _saliency_precomputed = saliency
+    _saliency_frame_indices = frame_indices
+
+
+def clear_saliency_context() -> None:
+    global _saliency_precomputed, _saliency_frame_indices
+    _saliency_precomputed = None
+    _saliency_frame_indices = None
+
+
+def get_saliency_context():
+    return _saliency_precomputed, _saliency_frame_indices
+
 
 def check_shape(x, y):
     assert x.shape == y.shape, "shape of tensors must be the same!"

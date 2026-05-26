@@ -14,6 +14,7 @@ from NVRC.losses_helpers import (
     get_wloss,
     compute_saliency_cached,
     compute_stanet_score,
+    get_saliency_context,
 )
 import pytorch_msssim
 
@@ -259,11 +260,19 @@ def wd_saliency(x, y, sigma_max=16.0, pmin=0.5, scale=0.02):
     wloss = get_wloss(x[0].device)
     loss = torch.empty(N, T, device=x[0].device)
 
-    # Batch all T frames into one forward pass: [N, C, T, H, W] → [N*T, C, H, W]
-    frames_all = x.permute(0, 2, 1, 3, 4).contiguous().view(N * T, C, H, W)
-    s_all = compute_saliency_cached(frames_all)  # [N*T, 1, h_s, w_s]
-    _, _, h_s, w_s = s_all.shape
-    s_all = s_all.view(N, T, 1, h_s, w_s)  # [N, T, 1, h_s, w_s]
+    precomputed_saliency, frame_indices = get_saliency_context()
+    if precomputed_saliency is not None and frame_indices is not None:
+        # Look up precomputed saliency without running the model
+        _, _, h_s, w_s = precomputed_saliency.shape
+        fi = frame_indices.tolist()
+        flat_idx = [fi[n] + t for n in range(N) for t in range(T)]
+        s_all = precomputed_saliency[flat_idx].view(N, T, 1, h_s, w_s).to(x.device)
+    else:
+        # Batch all T frames into one forward pass: [N, C, T, H, W] → [N*T, C, H, W]
+        frames_all = x.permute(0, 2, 1, 3, 4).contiguous().view(N * T, C, H, W)
+        s_all = compute_saliency_cached(frames_all)  # [N*T, 1, h_s, w_s]
+        _, _, h_s, w_s = s_all.shape
+        s_all = s_all.view(N, T, 1, h_s, w_s)  # [N, T, 1, h_s, w_s]
 
     for t in range(T):
         frame = x[:, :, t]  # [N, C, H, W]
