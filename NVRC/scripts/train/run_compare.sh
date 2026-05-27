@@ -1,16 +1,7 @@
 #!/bin/bash
 # Run baseline + wd + wd-saliency on Test_50frame for comparison.
 # All jobs run sequentially on the same GPU.
-# Usage: bash run_compare.sh [GPU_ID]
-
-GPU_ID=${1:-0}
-VID=Test_50frame
-LAMB=10.0
-SCALE=s
-LR_S1=2e-3
-LR_S2=1e-4
-GRAD_ACCUM=1
-BATCH_SIZE=144
+# Usage: bash run_compare.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -30,17 +21,13 @@ run() {
 }
 
 run "baseline" \
-    "${SCRIPT_DIR}/overfitting_uvg_nvrc.sh" \
-    ${GPU_ID} ${VID} ${LAMB} ${SCALE} ${LR_S1} ${LR_S2} ${GRAD_ACCUM} ${BATCH_SIZE}
+    "${SCRIPT_DIR}/nvrc_loss.sh" \
+    -loss l1_ms-ssim -q
 
 run "wd" \
     "${SCRIPT_DIR}/nvrc_loss.sh" \
-    -gpu ${GPU_ID} -vid ${VID} -lamb ${LAMB} -scale ${SCALE} \
-    -lr1 ${LR_S1} -lr2 ${LR_S2} -ga ${GRAD_ACCUM} -bs ${BATCH_SIZE} \
-    -loss wd
+    -loss wd -q
 
 run "wd-saliency" \
     "${SCRIPT_DIR}/nvrc_loss.sh" \
-    -gpu ${GPU_ID} -vid ${VID} -lamb ${LAMB} -scale ${SCALE} \
-    -lr1 ${LR_S1} -lr2 ${LR_S2} -ga ${GRAD_ACCUM} -bs ${BATCH_SIZE} \
-    -loss wd-saliency
+    -loss wd-saliency -q -ga 2 -bs 72
