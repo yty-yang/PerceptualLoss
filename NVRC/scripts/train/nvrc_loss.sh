@@ -116,12 +116,11 @@ COMPRESS_MODEL_CFG_S2=scripts/configs/nvrc/compress_models/nvrc_s2.yaml
 MODEL_CFG_S1=scripts/configs/nvrc/models/mcl-jcv_hinerv-v2_${SCALE}_1920x1080.yaml
 MODEL_CFG_S2=${MODEL_CFG_S1}
 if [ "${QUICK}" = "true" ]; then
-    EXP_CFG_S1=scripts/configs/nvrc/overfit/s1-60e.yaml
-    EXP_CFG_S2=scripts/configs/nvrc/overfit/s2-5e.yaml
+    EXP_CFG_S1=scripts/configs/nvrc/overfit/s1-180e.yaml
 else
     EXP_CFG_S1=scripts/configs/nvrc/overfit/s1-360e.yaml
-    EXP_CFG_S2=scripts/configs/nvrc/overfit/s2-30e.yaml
 fi
+EXP_CFG_S2=scripts/configs/nvrc/overfit/s2-30e.yaml
 DATASET_DIR=${WORK_DIR}/Datasets/
 DATASET=${VID}
 START_FRAME=-1
