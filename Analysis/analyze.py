@@ -49,12 +49,13 @@ def read_all_txt(path: Path) -> dict | None:
     if not rows:
         return None
     r = rows[0]
-    ms_ssim_key = next((k for k in r if k.startswith("ms-ssim")), None)
+    lpips = float(r["lpips_avg"]) if "lpips_avg" in r else None
+    dists = float(r["dists_avg"]) if "dists_avg" in r else None
     return {
         "bpp": float(r["bpp_avg"]),
         "psnr": float(r["psnr_avg"]),
-        "ms_ssim": float(r[ms_ssim_key]) if ms_ssim_key else None,
-        "ms_ssim_metric": ms_ssim_key,
+        "lpips": lpips,
+        "dists": dists,
         "size_bytes": int(r["size"]),
         "train_time_s": float(r["train_time_avg"]),
     }
@@ -94,19 +95,26 @@ def collect(outputs_dir: Path) -> pd.DataFrame:
 
 # ── Display ───────────────────────────────────────────────────────────────────
 
+def _fmt(val, fmt):
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return "N/A"
+    return fmt.format(val)
+
+
 def print_summary(df: pd.DataFrame):
-    show = ["video", "config", "loss", "lr", "bpp", "psnr", "ms_ssim", "size_bytes"]
+    show = ["video", "config", "loss", "lr", "lambda", "bpp", "psnr", "lpips", "dists", "size_bytes"]
     cols = [c for c in show if c in df.columns]
     fmt = {
-        "bpp": "{:.4f}".format,
-        "psnr": "{:.4f}".format,
-        "ms_ssim": "{:.4f}".format,
-        "size_bytes": "{:,}".format,
+        "bpp": "{:.4f}",
+        "psnr": "{:.4f}",
+        "lpips": "{:.4f}",
+        "dists": "{:.4f}",
+        "size_bytes": "{:,}",
     }
     styled = df[cols].copy()
-    for col, fn in fmt.items():
+    for col, f in fmt.items():
         if col in styled.columns:
-            styled[col] = styled[col].map(fn)
+            styled[col] = styled[col].apply(lambda v, f=f: _fmt(v, f))
     print(styled.to_string(index=False))
 
 
@@ -114,7 +122,8 @@ def print_summary(df: pd.DataFrame):
 
 METRICS = {
     "psnr": "PSNR (dB)",
-    "ms_ssim": "MS-SSIM",
+    "lpips": "LPIPS (lower=better)",
+    "dists": "DISTS (lower=better)",
 }
 
 
@@ -123,8 +132,14 @@ def plot_rd(df: pd.DataFrame, plots_dir: Path):
 
     for video, vdf in sorted(df.groupby("video")):
         for metric, ylabel in METRICS.items():
+            if metric not in vdf.columns or vdf[metric].isna().all():
+                continue
+            mdf = vdf.dropna(subset=[metric])
+            if mdf.empty:
+                continue
+
             fig, ax = plt.subplots(figsize=(8, 6))
-            for (config, loss), grp in sorted(vdf.groupby(["config", "loss"])):
+            for (config, loss), grp in sorted(mdf.groupby(["config", "loss"])):
                 grp = grp.sort_values("bpp")
                 ax.plot(grp["bpp"], grp[metric], marker="o", label=f"{config} / {loss}")
             ax.set_xlabel("BPP")
