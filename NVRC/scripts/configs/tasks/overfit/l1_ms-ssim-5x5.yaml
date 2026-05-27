@@ -1,4 +1,4 @@
 loss: [0.7, l1, 0.3, ms-ssim-5x5]
-metric: [psnr, ms-ssim-5x5]
+metric: [psnr, lpips, dists]
 color_space: RGB
 lamb: 1.0

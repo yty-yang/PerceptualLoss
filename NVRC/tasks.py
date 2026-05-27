@@ -1,7 +1,7 @@
 from utils import *
 from io_utils import *
 from losses import *
-from NVRC.losses_helpers import get_saliency_model, set_saliency_context, clear_saliency_context
+from NVRC.loss_utils import get_saliency_model, set_saliency_context, clear_saliency_context
 
 
 class OverfitTask:

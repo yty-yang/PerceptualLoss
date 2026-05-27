@@ -3,12 +3,14 @@ Losses
 """
 
 from utils import *
-from NVRC.losses_helpers import (
+from NVRC.loss_utils import (
     check_shape,
     yuv444to420,
     create_ssim_win,
     get_wloss,
     get_saliency_context,
+    get_lpips_model,
+    get_dists_model,
 )
 import pytorch_msssim
 
@@ -297,6 +299,34 @@ def wd_saliency(x, y, sigma_max=16.0, pmin=0.5, scale=0.02):
     return loss * scale
 
 
+def lpips_metric(x, y):
+    """Compute per-frame LPIPS (lower = more similar)."""
+    N, C, T, H, W = x.shape
+    x_f = x.permute(0, 2, 1, 3, 4).reshape(N * T, C, H, W)
+    y_f = y.permute(0, 2, 1, 3, 4).reshape(N * T, C, H, W)
+    if C == 1:
+        x_f = x_f.expand(-1, 3, -1, -1)
+        y_f = y_f.expand(-1, 3, -1, -1)
+    model = get_lpips_model(x.device)
+    with torch.no_grad():
+        scores = model(x_f, y_f, normalize=True)  # [N*T, 1, 1, 1]
+    return scores.view(N, T)
+
+
+def dists_metric(x, y):
+    """Compute per-frame DISTS (lower = more similar)."""
+    N, C, T, H, W = x.shape
+    x_f = x.permute(0, 2, 1, 3, 4).reshape(N * T, C, H, W)
+    y_f = y.permute(0, 2, 1, 3, 4).reshape(N * T, C, H, W)
+    if C == 1:
+        x_f = x_f.expand(-1, 3, -1, -1)
+        y_f = y_f.expand(-1, 3, -1, -1)
+    model = get_dists_model(x.device)
+    with torch.no_grad():
+        scores = model(x_f, y_f, batch_average=False)  # [N*T]
+    return scores.view(N, T)
+
+
 def compute_loss(name, x, y):
     check_shape(x, y)
     x, y = x.float(), y.float()
@@ -365,6 +395,10 @@ def compute_metric(name, x, y):
         metric = ms_ssim_y(x, y)
     elif name == "ms-ssim-y-5x5":
         metric = ms_ssim_y(x, y, win_size=5)
+    elif name == "lpips":
+        metric = lpips_metric(x, y)
+    elif name == "dists":
+        metric = dists_metric(x, y)
     else:
         raise ValueError
     assert metric.ndim == 2, "metric is expected to have 2D ([N, T])"

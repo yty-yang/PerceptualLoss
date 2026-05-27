@@ -1,5 +1,5 @@
 """
-Loss helpers - internal utilities for loss computation.
+Loss utils - internal utilities for loss computation.
 """
 
 from utils import *
@@ -10,6 +10,8 @@ from NVRC.loss_models.WassersteinDistortion.wasserstein_distortion import (
 )
 import NVRC.loss_models.EMLNETSaliency.resnet as resnet
 import NVRC.loss_models.EMLNETSaliency.decoder as decoder
+import lpips
+from DISTS_pytorch import DISTS
 
 # singletons
 # _rankdvqa_model = None
@@ -18,6 +20,8 @@ import NVRC.loss_models.EMLNETSaliency.decoder as decoder
 # _scaling_layer = None
 _wloss = None
 _saliency_model = None
+_lpips_model = None
+_dists_model = None
 
 # precomputed saliency context (set before compute_loss, cleared after)
 _saliency_precomputed: torch.Tensor | None = None  # [T_total, 1, h_s, w_s] on CPU
@@ -61,6 +65,26 @@ def get_wloss(device):
     if _wloss is None:
         _wloss = VGG16WassersteinDistortion().to(device)
     return _wloss
+
+
+def get_lpips_model(device):
+    global _lpips_model
+    if _lpips_model is None:
+        _lpips_model = lpips.LPIPS(net="alex").to(device)
+        _lpips_model.eval()
+        for p in _lpips_model.parameters():
+            p.requires_grad_(False)
+    return _lpips_model
+
+
+def get_dists_model(device):
+    global _dists_model
+    if _dists_model is None:
+        _dists_model = DISTS().to(device)
+        _dists_model.eval()
+        for p in _dists_model.parameters():
+            p.requires_grad_(False)
+    return _dists_model
 
 
 def get_saliency_model(device):
