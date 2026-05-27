@@ -1,11 +1,11 @@
 #!/bin/bash
 # Usage: nvrc_train.sh <GPU_ID> <VID> <LAMB> <SCALE> <LR_S1> <LR_S2> <GRAD_ACCUM> <BATCH_SIZE> [LOSS_TYPE]
-# Defaults: GPU_ID=0, VID=Test_50frame, LAMB=1.0, SCALE=s, LR_S1=2e-3, LR_S2=1e-4, GRAD_ACCUM=8, BATCH_SIZE=80, LOSS_TYPE=wd
+# Defaults: GPU_ID=0, VID=Test_50frame, LAMB=0.3, SCALE=xs, LR_S1=2e-3, LR_S2=1e-4, GRAD_ACCUM=8, BATCH_SIZE=80, LOSS_TYPE=wd
 
 GPU_ID=0
 VID=Test_50frame
-LAMB=10.0
-SCALE=s
+LAMB=0.3
+SCALE=xs
 LR_S1=2e-3
 LR_S2=1e-4
 T_PATCH=1
@@ -113,7 +113,7 @@ WORK_DIR=${WORK_DIR:-${HOME}/PerceptualLoss}
 ROOT=${WORK_DIR}
 COMPRESS_MODEL_CFG_S1=scripts/configs/nvrc/compress_models/nvrc_s1.yaml
 COMPRESS_MODEL_CFG_S2=scripts/configs/nvrc/compress_models/nvrc_s2.yaml
-MODEL_CFG_S1=scripts/configs/nvrc/models/uvg_hinerv-v2-${SCALE}_1920x1080.yaml
+MODEL_CFG_S1=scripts/configs/nvrc/models/mcl-jcv_hinerv-v2_${SCALE}_1920x1080.yaml
 MODEL_CFG_S2=${MODEL_CFG_S1}
 if [ "${QUICK}" = "true" ]; then
     EXP_CFG_S1=scripts/configs/nvrc/overfit/s1-60e.yaml
