@@ -7,12 +7,7 @@ from NVRC.losses_helpers import (
     check_shape,
     yuv444to420,
     create_ssim_win,
-    get_rankdvqa_model,
-    get_stanet_model,
-    get_extractor,
-    get_scaling_layer,
     get_wloss,
-    compute_stanet_score,
     get_saliency_context,
 )
 import pytorch_msssim
@@ -194,32 +189,32 @@ def ms_ssim_y(x, y, v_max=1.0, win_size=11):
     return ms_ssim(x[:, 0:1], y[:, 0:1], v_max, win_size)
 
 
-def rankdvqa(x, y):
-    """
-    Compute RankDVQA loss using Stage 1 (LPIPS_3D_Diff) + Stage 2 (STANet).
+# def rankdvqa(x, y):
+#     """
+#     Compute RankDVQA loss using Stage 1 (LPIPS_3D_Diff) + Stage 2 (STANet).
 
-    STANet outputs a perceptual quality score derived from weighted patch scores.
-    """
-    model = get_rankdvqa_model(x.device)
-    stanet = get_stanet_model(x.device)
-    extractor = get_extractor(x.device)
-    scaling_layer = get_scaling_layer(x.device)
+#     STANet outputs a perceptual quality score derived from weighted patch scores.
+#     """
+#     model = get_rankdvqa_model(x.device)
+#     stanet = get_stanet_model(x.device)
+#     extractor = get_extractor(x.device)
+#     scaling_layer = get_scaling_layer(x.device)
 
-    N, _, T, _, _ = x.shape
-    per_sample = []
+#     N, _, T, _, _ = x.shape
+#     per_sample = []
 
-    for n in range(N):
-        quality = compute_stanet_score(
-            y[n : n + 1], x[n : n + 1], model, stanet, extractor, scaling_layer
-        )
-        # quality ≤ 0 for meaningful reconstructions (LPIPS_3D_Diff outputs negative for bad quality).
-        # Clamp to max=0 before negating: prevents adversarial solutions where quality goes positive,
-        # which would drive d_loss negative and cause training collapse.
-        per_sample.append(
-            -quality.clamp(max=0).unsqueeze(0).expand(T)
-        )  # TODO: the clamp isn't resonable
+#     for n in range(N):
+#         quality = compute_stanet_score(
+#             y[n : n + 1], x[n : n + 1], model, stanet, extractor, scaling_layer
+#         )
+#         # quality ≤ 0 for meaningful reconstructions (LPIPS_3D_Diff outputs negative for bad quality).
+#         # Clamp to max=0 before negating: prevents adversarial solutions where quality goes positive,
+#         # which would drive d_loss negative and cause training collapse.
+#         per_sample.append(
+#             -quality.clamp(max=0).unsqueeze(0).expand(T)
+#         )
 
-    return torch.stack(per_sample, dim=0)  # (N, T)
+#     return torch.stack(per_sample, dim=0)  # (N, T)
 
 
 def wd(x, y, sigma_const=8.0, scale=0.02):
@@ -261,7 +256,9 @@ def wd_saliency(x, y, sigma_max=16.0, pmin=0.5, scale=0.02):
 
     precomputed_saliency, patch_coords, idx_max = get_saliency_context()
     if precomputed_saliency is None or patch_coords is None:
-        raise RuntimeError("wd-saliency requires precomputed saliency context. Call precompute_saliency() before training.")
+        raise RuntimeError(
+            "wd-saliency requires precomputed saliency context. Call precompute_saliency() before training."
+        )
 
     # Crop per-frame saliency [T_total, 1, h_s, w_s] to each patch's spatial region.
     _, _, h_s, w_s = precomputed_saliency.shape
@@ -277,8 +274,9 @@ def wd_saliency(x, y, sigma_max=16.0, pmin=0.5, scale=0.02):
         for t_step in range(T):
             t_frame = patch_coords[n, 0].item() * T + t_step
             c = precomputed_saliency[t_frame, :, y0:y1, x0:x1]  # [1, raw_h, raw_w]
-            c = F.interpolate(c.unsqueeze(0), size=(crop_h, crop_w),
-                              mode='bilinear', antialias=False).squeeze(0)
+            c = F.interpolate(
+                c.unsqueeze(0), size=(crop_h, crop_w), mode="bilinear", antialias=False
+            ).squeeze(0)
             per_t.append(c)
         crops.append(torch.stack(per_t, dim=0))  # [T, 1, crop_h, crop_w]
     s_all = torch.stack(crops, dim=0).to(x.device)  # [N, T, 1, crop_h, crop_w]
