@@ -1,5 +1,7 @@
 codec,video,experiment,stage,loss,config,lr,lambda,bpp,psnr,lpips,dists,size_bytes,train_time_s
+NVRC,Jockey_200,nvrc_uvg_hinerv-v2-xs_1920x1080_x1x144_lamb-0.2_lr-1e-4_wd-saliency_s2,s2,wd-saliency,x1x144,1e-4,0.2,0.0081,33.5585,0.0746,0.0445,3347168,2070.3637
 NVRC,Jockey_200,nvrc_uvg_hinerv-v2-xs_1920x1080_x1x144_lamb-0.2_lr-1e-4_wd_s2,s2,wd,x1x144,1e-4,0.2,0.0083,33.4699,0.0774,0.0449,3431040,1117.6965
 NVRC,Jockey_200,nvrc_uvg_hinerv-v2-xs_1920x1080_x1x144_lamb-0.3_lr-1e-4_l1_ms-ssim_s2,s2,baseline,x1x144,1e-4,0.3,0.0081,34.7474,0.1325,0.1154,3347392,703.1846
+NVRC,Jockey_200,nvrc_uvg_hinerv-v2-xs_1920x1080_x1x144_lamb-0.3_lr-1e-4_wd-saliency_s2,s2,wd-saliency,x1x144,1e-4,0.3,0.0102,34.5378,0.064,0.0376,4246976,2086.8508
 NVRC,Jockey_200,nvrc_uvg_hinerv-v2-xs_1920x1080_x1x144_lamb-0.3_lr-1e-4_wd_s2,s2,wd,x1x144,1e-4,0.3,0.01,34.2391,0.0678,0.0394,4139104,1519.2589
 NVRC,Jockey_200,nvrc_uvg_hinerv-v2-xs_1920x1080_x1x144_lamb-0.5_lr-1e-4_l1_ms-ssim_s2,s2,baseline,x1x144,1e-4,0.5,0.0109,36.05,0.1162,0.1039,4539680,715.2276
