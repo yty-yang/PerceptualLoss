@@ -299,6 +299,45 @@ def wd_saliency(x, y, sigma_max=16.0, pmin=0.5, scale=0.02):
     return loss * scale
 
 
+def flow_warp(frame, flow):
+    """Backward warp frame using forward optical flow.
+
+    For each output pixel (x, y), samples frame at (x − dx, y − dy) where
+    (dx, dy) = flow[:, :, y, x].  This is the standard backward-warp
+    approximation used when only forward flow is available.
+
+    Args:
+        frame: [N, C, H, W] float tensor — frame to warp (f_{t−1})
+        flow:  [N, 2, H, W] float tensor — forward flow in pixels;
+               channel 0 = dx (horizontal), channel 1 = dy (vertical)
+    Returns:
+        [N, C, H, W] warped frame, border-clamped.
+    """
+    N, C, H, W = frame.shape
+
+    # Build base grid of pixel coordinates [N, H, W, 2] (x, y order)
+    grid_y, grid_x = torch.meshgrid(
+        torch.arange(H, dtype=frame.dtype, device=frame.device),
+        torch.arange(W, dtype=frame.dtype, device=frame.device),
+        indexing='ij',
+    )
+    # [H, W, 2] → [N, H, W, 2]
+    grid = torch.stack([grid_x, grid_y], dim=-1).unsqueeze(0).expand(N, -1, -1, -1)
+
+    # Subtract forward flow to get backward-warp sampling locations
+    # flow: [N, 2, H, W] → [N, H, W, 2]
+    grid = grid - flow.permute(0, 2, 3, 1)
+
+    # Normalise to [-1, 1] for grid_sample
+    grid[..., 0] = 2.0 * grid[..., 0] / (W - 1) - 1.0   # x
+    grid[..., 1] = 2.0 * grid[..., 1] / (H - 1) - 1.0   # y
+
+    return F.grid_sample(
+        frame, grid,
+        mode='bilinear', padding_mode='border', align_corners=True,
+    )
+
+
 def lpips_metric(x, y):
     """Compute per-frame LPIPS (lower = more similar)."""
     N, C, T, H, W = x.shape
@@ -359,8 +398,8 @@ def compute_loss(name, x, y):
         loss = 1.0 - ms_ssim_y(x, y)
     elif name == "ms-ssim-y-5x5":
         loss = 1.0 - ms_ssim_y(x, y, win_size=5)
-    elif name == "rankdvqa":
-        loss = rankdvqa(x, y)
+    # elif name == "rankdvqa":
+    #     loss = rankdvqa(x, y)
     elif name == "wd":
         loss = wd(x, y)
     elif name == "wd-saliency":
