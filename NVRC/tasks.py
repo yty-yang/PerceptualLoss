@@ -1,7 +1,10 @@
 from utils import *
 from io_utils import *
 from losses import *
-from NVRC.loss_utils import get_saliency_model, set_saliency_context, clear_saliency_context
+from NVRC.loss_utils import (
+    get_saliency_model, set_saliency_context, clear_saliency_context,
+    get_raft_model, get_wloss,
+)
 
 
 class OverfitTask:
@@ -96,6 +99,76 @@ class OverfitTask:
 
         self._saliency_cache = torch.cat(results, dim=0)  # [T, 1, h_s, w_s]
         self.logger.info(f'Precomputed saliency cache: {self._saliency_cache.shape}')
+
+    def precompute_temporal(self, dataset) -> None:
+        """Precompute optical flow and WD-based weights for consecutive frame pairs.
+
+        Stores:
+            _flow_cache: [T-1, 2, H, W] CPU tensor — RAFT forward flow from t-1 → t
+            _w_cache:    [T-1] CPU tensor — exp(-WD_raw(x_t, x_{t-1}) / tau)
+        """
+        if not any(loss_type == 'wd-saliency-temp' for loss_type in self.loss_cfg[1::2]):
+            return
+
+        video = dataset.video
+        cache = getattr(video, 'cache', None)
+        if cache is None or not (hasattr(cache, 'ndim') and cache.ndim == 4):
+            self.logger.info('Temporal precomputation skipped: unsupported video format.')
+            return
+
+        T_total = dataset.get_num_frames()
+        if T_total < 2:
+            self.logger.info('Temporal precomputation skipped: need >= 2 frames.')
+            return
+
+        device = self.device
+        from torchvision.models.optical_flow import Raft_Small_Weights
+
+        raft = get_raft_model(device)
+        raft_transforms = Raft_Small_Weights.C_T_V2.transforms()
+        wloss = get_wloss(device)
+
+        H_orig, W_orig = cache.shape[1], cache.shape[2]
+        log2_sigma = torch.full(
+            (1, 1, H_orig, W_orig), math.log2(8.0),
+            dtype=torch.float32, device=device,
+        )
+
+        scale = dataset.channel_scale.view(1, -1, 1, 1)
+        shift = dataset.channel_shift.view(1, -1, 1, 1)
+
+        flow_list: list[torch.Tensor] = []
+        wd_list: list[float] = []
+        prev_frame: torch.Tensor | None = None
+
+        for t in range(T_total):
+            frame_np = cache[t:t + 1]  # [1, H, W, C]
+            frame = (
+                torch.from_numpy(frame_np.astype(np.float32))
+                .permute(0, 3, 1, 2)
+            )
+            frame = (frame * scale + shift).clamp(0.0, 1.0).to(device)  # [1, C, H, W]
+
+            if prev_frame is not None:
+                img1_t, img2_t = raft_transforms(prev_frame, frame)
+                with torch.no_grad():
+                    flow_preds = raft(img1_t, img2_t)
+                flow_list.append(flow_preds[-1].squeeze(0).cpu())  # [2, H, W]
+
+                with torch.no_grad():
+                    wd_val = wloss(prev_frame, frame, log2_sigma).mean().item()
+                wd_list.append(wd_val)
+
+            prev_frame = frame
+
+        self._flow_cache = torch.stack(flow_list, dim=0)          # [T-1, 2, H, W]
+        wd_tensor = torch.tensor(wd_list, dtype=torch.float32)
+        self._w_cache = torch.exp(-wd_tensor / self.temp_tau).cpu()  # [T-1]
+
+        self.logger.info(
+            f'Precomputed temporal cache: flow={self._flow_cache.shape}, '
+            f'w_mean={self._w_cache.mean():.3f}, w_min={self._w_cache.min():.3f}'
+        )
 
     def parse_batch(self, batch):
         """
