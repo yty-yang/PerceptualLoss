@@ -72,7 +72,7 @@ class OverfitTask:
         During training, wd_saliency crops the appropriate spatial region per patch.
         Only supported when the video cache is a 4-D numpy array (PNGVideo).
         """
-        if not any(loss_type == 'wd-saliency' for loss_type in self.loss_cfg[1::2]):
+        if not any(loss_type in ('wd-saliency', 'wd-saliency-temp') for loss_type in self.loss_cfg[1::2]):
             return
 
         video = dataset.video
