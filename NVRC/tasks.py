@@ -200,13 +200,13 @@ class OverfitTask:
         inputs_prev['idx'] = idx_prev
         inputs_prev['x'] = None
 
-        with torch.no_grad():
-            f_prev_batch = model(inputs_prev, compute_outputs=True, compute_rates=False)
-        f_prev_batch = self.parse_output(f_prev_batch).detach()  # [N, C, T_p, H_pad, W_pad]
-
         N, C, T_p, H_pad, W_pad = output.shape
         if T_p != 1:
             return torch.tensor(0.0, device=device)
+
+        with torch.no_grad():
+            f_prev_batch = model(inputs_prev, compute_outputs=True, compute_rates=False)
+        f_prev_batch = self.parse_output(f_prev_batch).detach()  # [N, C, T_p, H_pad, W_pad]
 
         temp_losses: list[torch.Tensor] = []
 

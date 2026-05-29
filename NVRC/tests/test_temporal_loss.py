@@ -121,9 +121,58 @@ def test_compute_temp_loss_skips_t0_samples():
     print('compute_temp_loss t=0 returns 0 OK.')
 
 
+def test_compute_temp_loss_main_path():
+    """Verify loss is nonzero and correct for t>0 samples with known zero-flow inputs."""
+    from unittest.mock import MagicMock
+    from tasks import OverfitTask
+
+    C, H, W = 1, 4, 4
+    temp_weight = 0.5
+
+    task = MagicMock()
+    task._flow_cache = torch.zeros(2, 2, H, W)  # zero flow = identity warp
+    task._w_cache = torch.ones(2)                # w = 1
+    task._saliency_cache = None                   # sigma = 1
+    task.temp_weight = temp_weight
+    task.parse_output = lambda x: x
+
+    # sample 0: t=0 (skipped), samples 1 and 2: t=1 and t=2
+    f_t1 = torch.ones(C, 1, H, W) * 2.0
+    f_t2 = torch.ones(C, 1, H, W) * 3.0
+    output = torch.stack([torch.zeros(C, 1, H, W), f_t1, f_t2], dim=0)  # [3, C, 1, H, W]
+
+    f_prev1 = torch.ones(C, 1, H, W) * 0.5
+    f_prev2 = torch.ones(C, 1, H, W) * 1.0
+    f_prev_batch = torch.stack([torch.zeros(C, 1, H, W), f_prev1, f_prev2], dim=0)
+    mock_model = MagicMock(return_value=f_prev_batch)
+
+    idx = torch.zeros(3, 3, dtype=torch.long)
+    idx[1, 0] = 1   # sample 1: t=1
+    idx[2, 0] = 2   # sample 2: t=2
+    inputs = {
+        'idx': idx, 'x': None, 'lamb': torch.tensor([1.0]),
+        'vidx': torch.zeros(3, dtype=torch.int32),
+        'vidx_max': 1, 'idx_max': (3, 1, 1),
+        'rel_batch_size': 1.0,
+        'video_size': (3, H, W), 'patch_size': (1, H, W), 'channels': C,
+    }
+
+    result = OverfitTask.compute_temp_loss(task, model=mock_model, output=output, inputs=inputs)
+
+    # zero flow → identity warp; sigma=1, w=1
+    # loss_1 = (2.0-0.5)^2 = 2.25, loss_2 = (3.0-1.0)^2 = 4.0
+    # mean = 3.125, scaled = 0.5 * 3.125 = 1.5625
+    expected = temp_weight * ((2.0 - 0.5)**2 + (3.0 - 1.0)**2) / 2
+    assert abs(result.item() - expected) < 1e-4, f"Expected {expected:.4f}, got {result.item():.4f}"
+    print(f'compute_temp_loss main path OK (loss={result.item():.4f}).')
+
+
 if __name__ == '__main__':
     test_flow_warp_zero_flow_is_identity()
     test_flow_warp_shift_right_by_one()
     test_flow_warp_output_shape()
     test_raft_model_output_shape()
-    print('All flow_warp tests passed.')
+    test_compute_temp_loss_returns_zero_when_no_cache()
+    test_compute_temp_loss_skips_t0_samples()
+    test_compute_temp_loss_main_path()
+    print('All temporal loss tests passed.')
