@@ -232,6 +232,6 @@ def create_overfit_task(args, logger, video, channel_scale=None, channel_shift=N
     task = OverfitTask(logger, video, loss_cfg=config.loss, metric_cfg=config.metric,
                        lamb=config.lamb, channel_scale=channel_scale, channel_shift=channel_shift,
                        enable_log=config.enable_log, training=training, device=device,
-                       temp_weight=getattr(config, 'temp_weight', 0.1),
-                       temp_tau=getattr(config, 'temp_tau', 1.0))
+                       temp_weight=config.temp_weight,
+                       temp_tau=config.temp_tau)
     return task
