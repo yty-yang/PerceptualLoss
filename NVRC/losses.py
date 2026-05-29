@@ -404,6 +404,8 @@ def compute_loss(name, x, y):
         loss = wd(x, y)
     elif name == "wd-saliency":
         loss = wd_saliency(x, y)
+    elif name == "wd-saliency-temp":
+        loss = wd_saliency(x, y)   # temporal term added separately in d_step
     else:
         raise ValueError
     assert loss.ndim == 2, "loss is expected to have 2D ([N, T])"
