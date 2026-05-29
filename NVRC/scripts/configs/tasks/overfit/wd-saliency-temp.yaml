@@ -1,0 +1,6 @@
+loss: [1.0, wd-saliency-temp]
+metric: [psnr, lpips, dists]
+color_space: RGB
+lamb: 1.0
+temp_weight: 0.1
+temp_tau: 1.0

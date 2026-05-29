@@ -94,7 +94,7 @@ echo "LOSS_TYPE: ${LOSS_TYPE}"
 echo "EVAL_T_PATCH: ${EVAL_T_PATCH}"
 # Map LOSS_TYPE to config file
 case "${LOSS_TYPE}" in
-    wd|rankdvqa|wd-saliency)
+    wd|rankdvqa|wd-saliency|wd-saliency-temp)
         TRAIN_TASK_CFG=scripts/configs/tasks/overfit/${LOSS_TYPE}.yaml
         EVAL_TASK_CFG=scripts/configs/tasks/overfit/${LOSS_TYPE}.yaml
         ;;
@@ -104,7 +104,7 @@ case "${LOSS_TYPE}" in
         ;;
     *)
         echo "Error: Unknown LOSS_TYPE '${LOSS_TYPE}'"
-        echo "  Available: wd, rankdvqa, wd-saliency, l1_ms-ssim"
+        echo "  Available: wd, rankdvqa, wd-saliency, wd-saliency-temp, l1_ms-ssim"
         exit 1
         ;;
 esac
