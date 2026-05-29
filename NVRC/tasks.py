@@ -327,6 +327,8 @@ class OverfitTask:
             patch_coords=inputs['idx'],
             idx_max=inputs['idx_max'],
         )
+        if self._flow_cache is not None:
+            loss = loss + self.compute_temp_loss(model, output, inputs)
         metrics = self.compute_metrics(output, target)
         return inputs, target, output, loss, metrics
 
