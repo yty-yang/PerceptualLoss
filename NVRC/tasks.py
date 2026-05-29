@@ -215,32 +215,30 @@ class OverfitTask:
                 continue
 
             t = t_vals[n].item()
+            h_start = idx[n, 1].item() * H_pad
+            w_start = idx[n, 2].item() * W_pad
 
-            # Flow
+            # Crop flow to this patch's spatial region — flow is in native pixel units,
+            # no magnitude rescaling needed since the patch is at full resolution.
             flow_orig = self._flow_cache[t - 1].to(device)  # [2, H_orig, W_orig]
-            H_orig, W_orig = flow_orig.shape[-2], flow_orig.shape[-1]
-            if (H_orig, W_orig) != (H_pad, W_pad):
-                flow_up = F.interpolate(
-                    flow_orig.unsqueeze(0), size=(H_pad, W_pad),
-                    mode='bilinear', align_corners=True,
-                ).squeeze(0)
-                scale_w = W_pad / W_orig
-                scale_h = H_pad / H_orig
-                flow_up[0] *= scale_w   # dx
-                flow_up[1] *= scale_h   # dy
+            H_orig = flow_orig.shape[-2]
+            if H_orig != H_pad:
+                flow_up = flow_orig[:, h_start:h_start + H_pad, w_start:w_start + W_pad]
             else:
-                flow_up = flow_orig
+                flow_up = flow_orig  # already patch-sized (T_patch=H_video, shouldn't occur)
 
             # w scalar
             w_t = self._w_cache[t - 1].to(device)  # scalar
 
-            # sigma map from saliency cache
+            # sigma map: upsample full-frame saliency then crop to patch region
             if self._saliency_cache is not None:
                 s = self._saliency_cache[t].to(device)  # [1, h_s, w_s]
-                s = F.interpolate(
-                    s.unsqueeze(0), size=(H_pad, W_pad),
+                # upsample to full frame resolution, then crop to patch
+                s_full = F.interpolate(
+                    s.unsqueeze(0), size=(H_orig, flow_orig.shape[-1]),
                     mode='bilinear', antialias=False,
-                ).squeeze(0)  # [1, H_pad, W_pad]
+                ).squeeze(0)  # [1, H_orig, W_orig]
+                s = s_full[:, h_start:h_start + H_pad, w_start:w_start + W_pad]  # [1, H_pad, W_pad]
                 s_mean = s.mean()
                 p = 0.5 + (1 - 0.5) * s / (s_mean + 1e-8)
                 sigma_t = 16.0 * 0.5 / p   # [1, H_pad, W_pad]
