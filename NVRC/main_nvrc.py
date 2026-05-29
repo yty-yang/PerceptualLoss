@@ -108,10 +108,17 @@ def main():
                                                       accelerator, model,
                                                       metric=eval_task.get_metrics())
 
-        # Precompute saliency maps for the current group (no-op if loss != wd-saliency)
+        # Precompute saliency maps for the current group (no-op if loss != wd-saliency*)
         train_task._saliency_cache = None
         train_task.precompute_saliency(train_dataset)
         eval_task._saliency_cache = train_task._saliency_cache  # share cache; same frames
+
+        # Precompute optical flow + WD weights (no-op if loss != wd-saliency-temp)
+        train_task._flow_cache = None
+        train_task._w_cache = None
+        train_task.precompute_temporal(train_dataset)
+        eval_task._flow_cache = train_task._flow_cache   # share; same frames
+        eval_task._w_cache = train_task._w_cache
 
         # Training loop
         start_train_time = time.time()
