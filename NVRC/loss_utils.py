@@ -22,6 +22,7 @@ _wloss = None
 _saliency_model = None
 _lpips_model = None
 _dists_model = None
+_raft_model = None
 
 # precomputed saliency context (set before compute_loss, cleared after)
 _saliency_precomputed: torch.Tensor | None = None  # [T_total, 1, h_s, w_s] on CPU
@@ -85,6 +86,16 @@ def get_dists_model(device):
         for p in _dists_model.parameters():
             p.requires_grad_(False)
     return _dists_model
+
+
+def get_raft_model(device):
+    global _raft_model
+    if _raft_model is None:
+        from torchvision.models.optical_flow import raft_small, Raft_Small_Weights
+        _raft_model = raft_small(weights=Raft_Small_Weights.C_T_V2).to(device).eval()
+        for p in _raft_model.parameters():
+            p.requires_grad_(False)
+    return _raft_model
 
 
 def get_saliency_model(device):

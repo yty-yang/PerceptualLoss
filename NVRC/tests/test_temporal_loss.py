@@ -42,8 +42,31 @@ def test_flow_warp_output_shape():
         assert flow_warp(frame, flow).shape == (N, C, H, W)
 
 
+def test_raft_model_output_shape():
+    """RAFT should return a list whose last entry has shape [N, 2, H, W]."""
+    import os, sys
+    _NVRC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    _ROOT_DIR = os.path.abspath(os.path.join(_NVRC_DIR, '..'))
+    for _p in (_NVRC_DIR, _ROOT_DIR):
+        if _p not in sys.path:
+            sys.path.insert(0, _p)
+    from NVRC.loss_utils import get_raft_model
+    from torchvision.models.optical_flow import Raft_Small_Weights
+    device = 'cpu'
+    raft = get_raft_model(device)
+    transforms = Raft_Small_Weights.C_T_V2.transforms()
+    img1 = torch.rand(1, 3, 128, 128)
+    img2 = torch.rand(1, 3, 128, 128)
+    img1_t, img2_t = transforms(img1, img2)
+    with torch.no_grad():
+        preds = raft(img1_t, img2_t)
+    assert preds[-1].shape == (1, 2, 128, 128), f"Unexpected shape: {preds[-1].shape}"
+    print('RAFT output shape OK.')
+
+
 if __name__ == '__main__':
     test_flow_warp_zero_flow_is_identity()
     test_flow_warp_shift_right_by_one()
     test_flow_warp_output_shape()
+    test_raft_model_output_shape()
     print('All flow_warp tests passed.')
