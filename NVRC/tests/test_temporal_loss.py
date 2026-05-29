@@ -64,6 +64,63 @@ def test_raft_model_output_shape():
     print('RAFT output shape OK.')
 
 
+def test_compute_temp_loss_returns_zero_when_no_cache():
+    """compute_temp_loss should return 0 tensor when _flow_cache is None."""
+    import sys, os
+    _NVRC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    _ROOT_DIR = os.path.abspath(os.path.join(_NVRC_DIR, '..'))
+    for _p in (_NVRC_DIR, _ROOT_DIR):
+        if _p not in sys.path:
+            sys.path.insert(0, _p)
+    from unittest.mock import MagicMock
+    import torch
+    from tasks import OverfitTask
+
+    task = MagicMock()
+    task._flow_cache = None
+    task._w_cache = None
+
+    output = torch.zeros(2, 3, 1, 8, 8)
+    result = OverfitTask.compute_temp_loss(task, model=None, output=output,
+                                           inputs={'idx': torch.zeros(2, 3, dtype=torch.long)})
+    assert result.item() == 0.0
+    print('compute_temp_loss no-cache returns 0 OK.')
+
+
+def test_compute_temp_loss_skips_t0_samples():
+    """All samples with t=0 should produce zero temporal loss."""
+    import sys, os
+    _NVRC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    _ROOT_DIR = os.path.abspath(os.path.join(_NVRC_DIR, '..'))
+    for _p in (_NVRC_DIR, _ROOT_DIR):
+        if _p not in sys.path:
+            sys.path.insert(0, _p)
+    from unittest.mock import MagicMock
+    import torch
+    from tasks import OverfitTask
+
+    task = MagicMock()
+    task._flow_cache = torch.zeros(1, 2, 8, 8)
+    task._w_cache = torch.ones(1)
+    task._saliency_cache = None
+    task.temp_weight = 0.1
+    task.parse_output = lambda x: x
+
+    output = torch.rand(3, 3, 1, 8, 8, requires_grad=True)
+    idx = torch.zeros(3, 3, dtype=torch.long)   # all t=0
+    inputs = {
+        'idx': idx, 'x': None, 'lamb': torch.tensor([1.0]),
+        'vidx': torch.zeros(3, dtype=torch.int32),
+        'vidx_max': 1, 'idx_max': (1, 1, 1),
+        'rel_batch_size': 1.0,
+        'video_size': (1, 8, 8), 'patch_size': (1, 8, 8), 'channels': 3
+    }
+
+    result = OverfitTask.compute_temp_loss(task, model=MagicMock(), output=output, inputs=inputs)
+    assert result.item() == 0.0, f"Expected 0, got {result.item()}"
+    print('compute_temp_loss t=0 returns 0 OK.')
+
+
 if __name__ == '__main__':
     test_flow_warp_zero_flow_is_identity()
     test_flow_warp_shift_right_by_one()

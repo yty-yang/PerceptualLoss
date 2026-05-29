@@ -170,6 +170,97 @@ class OverfitTask:
             f'w_mean={self._w_cache.mean():.3f}, w_min={self._w_cache.min():.3f}'
         )
 
+    def compute_temp_loss(self, model, output, inputs):
+        """Temporal consistency loss term for wd-saliency-temp.
+
+        For each batch sample with temporal index t > 0:
+          1. Run a second model forward pass at t-1 (detached).
+          2. Warp f_{t-1} to frame t using precomputed RAFT flow.
+          3. Weight the squared difference by sigma_t (saliency) * w_t (WD weight).
+
+        Returns scalar tensor (0.0 when no valid pairs or cache absent).
+        """
+        if self._flow_cache is None or self._w_cache is None:
+            return torch.tensor(0.0, device=output.device)
+
+        idx = inputs['idx']      # [N, 3]
+        t_vals = idx[:, 0]       # [N]
+        valid_mask = t_vals > 0  # bool [N]
+
+        if not valid_mask.any():
+            return torch.tensor(0.0, device=output.device)
+
+        device = output.device
+
+        # Build a copy of inputs with temporal index decremented for valid samples.
+        # Invalid samples (t=0) keep their original index — outputs unused.
+        idx_prev = idx.clone()
+        idx_prev[valid_mask, 0] = t_vals[valid_mask] - 1
+        inputs_prev = dict(inputs)
+        inputs_prev['idx'] = idx_prev
+        inputs_prev['x'] = None
+
+        with torch.no_grad():
+            f_prev_batch = model(inputs_prev, compute_outputs=True, compute_rates=False)
+        f_prev_batch = self.parse_output(f_prev_batch).detach()  # [N, C, T_p, H_pad, W_pad]
+
+        N, C, T_p, H_pad, W_pad = output.shape
+        if T_p != 1:
+            return torch.tensor(0.0, device=device)
+
+        temp_losses: list[torch.Tensor] = []
+
+        for n in range(N):
+            if not valid_mask[n]:
+                continue
+
+            t = t_vals[n].item()
+
+            # Flow
+            flow_orig = self._flow_cache[t - 1].to(device)  # [2, H_orig, W_orig]
+            H_orig, W_orig = flow_orig.shape[-2], flow_orig.shape[-1]
+            if (H_orig, W_orig) != (H_pad, W_pad):
+                flow_up = F.interpolate(
+                    flow_orig.unsqueeze(0), size=(H_pad, W_pad),
+                    mode='bilinear', align_corners=True,
+                ).squeeze(0)
+                scale_w = W_pad / W_orig
+                scale_h = H_pad / H_orig
+                flow_up[0] *= scale_w   # dx
+                flow_up[1] *= scale_h   # dy
+            else:
+                flow_up = flow_orig
+
+            # w scalar
+            w_t = self._w_cache[t - 1].to(device)  # scalar
+
+            # sigma map from saliency cache
+            if self._saliency_cache is not None:
+                s = self._saliency_cache[t].to(device)  # [1, h_s, w_s]
+                s = F.interpolate(
+                    s.unsqueeze(0), size=(H_pad, W_pad),
+                    mode='bilinear', antialias=False,
+                ).squeeze(0)  # [1, H_pad, W_pad]
+                s_mean = s.mean()
+                p = 0.5 + (1 - 0.5) * s / (s_mean + 1e-8)
+                sigma_t = 16.0 * 0.5 / p   # [1, H_pad, W_pad]
+            else:
+                sigma_t = torch.ones(1, H_pad, W_pad, device=device)
+
+            # Warp and loss
+            f_t = output[n, :, 0]         # [C, H_pad, W_pad]
+            f_p = f_prev_batch[n, :, 0]   # [C, H_pad, W_pad]
+
+            warped = flow_warp(f_p.unsqueeze(0), flow_up.unsqueeze(0)).squeeze(0)  # [C, H_pad, W_pad]
+
+            diff = sigma_t * w_t * (f_t - warped)   # [C, H_pad, W_pad]
+            temp_losses.append(diff.pow(2).mean())
+
+        if not temp_losses:
+            return torch.tensor(0.0, device=device)
+
+        return self.temp_weight * torch.stack(temp_losses).mean()
+
     def parse_batch(self, batch):
         """
         Parse the input and output batch during training/evaluation step
