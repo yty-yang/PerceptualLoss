@@ -1,5 +1,9 @@
 import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+_NVRC_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+_ROOT_DIR = os.path.abspath(os.path.dirname(_NVRC_DIR))
+for _p in (_NVRC_DIR, _ROOT_DIR):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 import torch
 import torch.nn.functional as F
 from losses import flow_warp

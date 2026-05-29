@@ -398,8 +398,8 @@ def compute_loss(name, x, y):
         loss = 1.0 - ms_ssim_y(x, y)
     elif name == "ms-ssim-y-5x5":
         loss = 1.0 - ms_ssim_y(x, y, win_size=5)
-    # elif name == "rankdvqa":
-    #     loss = rankdvqa(x, y)
+    elif name == "rankdvqa":
+        loss = rankdvqa(x, y)
     elif name == "wd":
         loss = wd(x, y)
     elif name == "wd-saliency":
