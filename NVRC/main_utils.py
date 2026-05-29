@@ -127,6 +127,8 @@ class OverfitTaskConfig:
     color_space: str = 'RGB'
     lamb: float = 1.0
     enable_log: bool = False
+    temp_weight: float = 0.1
+    temp_tau: float = 1.0
 
 
 def parse_args():

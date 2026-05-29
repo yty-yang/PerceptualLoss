@@ -7,7 +7,8 @@ from NVRC.loss_utils import get_saliency_model, set_saliency_context, clear_sali
 class OverfitTask:
     def __init__(self, logger, video, loss_cfg, metric_cfg, lamb,
                  channel_scale=None, channel_shift=None,
-                 enable_log=True, training=True, device=None):
+                 enable_log=True, training=True, device=None,
+                 temp_weight=0.1, temp_tau=1.0):
         self.logger = logger
         self.video = video
         self.channels = self.video.get_num_channels()
@@ -25,6 +26,10 @@ class OverfitTask:
         self.device = device
         self.metrics_buffer = {}
         self._saliency_cache: torch.Tensor | None = None  # [T_total, 1, h_s, w_s] on CPU
+        self.temp_weight = float(temp_weight)
+        self.temp_tau = float(temp_tau)
+        self._flow_cache: torch.Tensor | None = None
+        self._w_cache: torch.Tensor | None = None
 
         assert isinstance(lamb, (list, tuple)) and len(lamb) == 1, 'lamb should be a list/tuple with a single value'
         self.lamb = torch.tensor(sorted(lamb), dtype=torch.float32, device=self.device)
@@ -226,5 +231,7 @@ def create_overfit_task(args, logger, video, channel_scale=None, channel_shift=N
 
     task = OverfitTask(logger, video, loss_cfg=config.loss, metric_cfg=config.metric,
                        lamb=config.lamb, channel_scale=channel_scale, channel_shift=channel_shift,
-                       enable_log=config.enable_log, training=training, device=device)
+                       enable_log=config.enable_log, training=training, device=device,
+                       temp_weight=getattr(config, 'temp_weight', 0.1),
+                       temp_tau=getattr(config, 'temp_tau', 1.0))
     return task
