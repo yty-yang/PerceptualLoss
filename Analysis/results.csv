@@ -2,6 +2,9 @@ codec,video,experiment,stage,loss,config,lr,lambda,bpp,psnr,lpips,dists,size_byt
 NVRC,Beauty_200,nvrc_uvg_hinerv-v2-xs_1920x1080_x1x144_lamb-0.1_lr-1e-4_wd-saliency_s2,s2,wd-saliency,x1x144,1e-4,0.1,0.0023,32.9072,0.161,0.1291,952128,2266.5915
 NVRC,Beauty_200,nvrc_uvg_hinerv-v2-xs_1920x1080_x1x144_lamb-0.1_lr-1e-4_wd_s2,s2,wd,x1x144,1e-4,0.1,0.0024,32.8659,0.1599,0.1256,978624,1086.9614
 NVRC,Beauty_200,nvrc_uvg_hinerv-v2-xs_1920x1080_x1x144_lamb-0.2_lr-1e-4_l1_ms-ssim_s2,s2,baseline,x1x144,1e-4,0.2,0.0029,35.5349,0.2795,0.2457,1187872,701.2611
+NVRC,Beauty_200,nvrc_uvg_hinerv-v2-xs_1920x1080_x1x144_lamb-0.5_lr-1e-4_wd-saliency_s2,s2,wd-saliency,x1x144,1e-4,0.5,0.0072,36.1322,0.1222,0.0826,2979200,2343.0214
+NVRC,Beauty_200,nvrc_uvg_hinerv-v2-xs_1920x1080_x1x144_lamb-0.5_lr-1e-4_wd_s2,s2,wd,x1x144,1e-4,0.5,0.0073,36.1489,0.1259,0.0896,3022976,1109.7751
+NVRC,Beauty_200,nvrc_uvg_hinerv-v2-xs_1920x1080_x1x144_lamb-0.6_lr-1e-4_l1_ms-ssim_s2,s2,baseline,x1x144,1e-4,0.6,0.0053,37.1979,0.2644,0.2211,2217600,716.8916
 NVRC,Jockey_200,nvrc_uvg_hinerv-v2-xs_1920x1080_x1x144_lamb-0.1_lr-1e-4_wd-saliency_s2,s2,wd-saliency,x1x144,1e-4,0.1,0.0055,31.7254,0.0997,0.0589,2274944,2129.2881
 NVRC,Jockey_200,nvrc_uvg_hinerv-v2-xs_1920x1080_x1x144_lamb-0.1_lr-1e-4_wd_s2,s2,wd,x1x144,1e-4,0.1,0.0055,31.4304,0.1041,0.0614,2296288,1116.2946
 NVRC,Jockey_200,nvrc_uvg_hinerv-v2-xs_1920x1080_x1x144_lamb-0.2_lr-1e-4_l1_ms-ssim_s2,s2,baseline,x1x144,1e-4,0.2,0.0064,33.6094,0.15,0.1259,2664512,702.0456
