@@ -182,20 +182,21 @@ def build_intrinsic_sigma_map(
     f: float,
     pi: float,
     zeta: int,
+    max_side: int = 512,
 ) -> torch.Tensor:
     """
     Algorithm 1 using Wasserstein distortion as the per-pixel distance measure.
 
-    VGG runs exactly once; d_i is computed as the squared mean/std difference
-    between adjacent pyramid levels of the same feature pyramid — no external
-    blurring required.  The dedicated MultiLevelStats pyramid (_sigma_stats) has
-    enough levels to cover the full sigma range (up to log2(max_sigma)+2 levels).
+    VGG runs exactly once on a downsampled frame (long edge capped at max_side).
+    Features are processed one at a time and freed immediately to keep peak GPU
+    memory low.  The result is upsampled back to the original H×W.
 
     Args:
-        frame:  [N, C, H, W] reference frame in [0, 1]
-        wloss:  VGG16WassersteinDistortion instance
-        sigmas: length-S tuple of monotonically increasing sigma values
+        frame:    [N, C, H, W] reference frame in [0, 1]
+        wloss:    VGG16WassersteinDistortion instance
+        sigmas:   length-S tuple of monotonically increasing sigma values
         k, f, pi, zeta: Algorithm 1 hyperparameters
+        max_side: long-edge cap before VGG (memory reduction)
 
     Returns:
         log2_sigma: [N, 1, H, W]
@@ -204,7 +205,18 @@ def build_intrinsic_sigma_map(
     N, C, H, W = frame.shape
     S = len(sigmas)
 
-    img = frame.expand(-1, 3, -1, -1) if (wloss.grayscale or C == 1) else frame
+    # ── Downsample for memory efficiency; upsample result at the end ──────
+    long_side = max(H, W)
+    if long_side > max_side:
+        scale = max_side / long_side
+        h_ds = max(1, int(round(H * scale)))
+        w_ds = max(1, int(round(W * scale)))
+        frame_ds = F.interpolate(frame.float(), (h_ds, w_ds), mode="bilinear", antialias=True)
+    else:
+        frame_ds = frame
+        h_ds, w_ds = H, W
+
+    img = frame_ds.expand(-1, 3, -1, -1) if (wloss.grayscale or C == 1) else frame_ds
     if wloss.normalize_center_to_zero:
         img = img * 2 - 1
 
@@ -219,69 +231,76 @@ def build_intrinsic_sigma_map(
         # ── VGG ONCE ──────────────────────────────────────────────────────
         all_feats = wloss.feature_backbone(img, num_scales=1)
         # [normalised_input, relu1_2, relu2_2, relu3_3, relu4_3, relu5_3]
+        del img
+        if frame_ds is not frame:
+            del frame_ds
+        torch.cuda.empty_cache()
 
-        # ── Pyramid ONCE per feature map ──────────────────────────────────
-        # all_pyramid[i] = (means, vars) for all_feats[i]
-        # means[j]: [N, C_i, H_i/2^j, W_i/2^j]
-        all_pyramid = [_sigma_stats(feat) for feat in all_feats]
+        # ── d_i accumulation — one feature map at a time ──────────────────
+        d_maps_accum = [frame.new_zeros(N, h_ds, w_ds) for _ in range(S - 1)]
 
-        # ── d_i via pyramid-level comparison ----------------------────────
-        d_maps = []
-        for i in range(S - 1):
-            l_i = math.log2(sigmas[i])
-            l_i1 = math.log2(sigmas[i + 1])
+        for i_feat in range(len(all_feats)):
+            feat = all_feats[i_feat]
+            all_feats[i_feat] = None  # drop list reference so memory can be reclaimed
+            if feat.dtype in (torch.float16, torch.bfloat16):
+                feat = feat.float()
 
-            d_i = frame.new_zeros(N, 1, H, W)
-            for means, vars_ in all_pyramid:
-                H_f, W_f = means[0].shape[-2:]
+            means, vars_ = _sigma_stats(feat)
+            del feat
+            H_f, W_f = means[0].shape[-2:]
 
-                m_i, v_i = _interp_pyramid_level(means, vars_, l_i)
+            for i in range(S - 1):
+                l_i  = math.log2(sigmas[i])
+                l_i1 = math.log2(sigmas[i + 1])
+
+                m_i,  v_i  = _interp_pyramid_level(means, vars_, l_i)
                 m_i1, v_i1 = _interp_pyramid_level(means, vars_, l_i1)
 
-                # Bring both to level-0 resolution of this feature map
                 if m_i.shape[-2:] != (H_f, W_f):
-                    m_i = F.interpolate(
-                        m_i, (H_f, W_f), mode="bilinear", antialias=False
-                    )
-                    v_i = F.interpolate(
-                        v_i.clamp(min=0), (H_f, W_f), mode="bilinear", antialias=False
-                    )
+                    m_i = F.interpolate(m_i,  (H_f, W_f), mode="bilinear", antialias=False)
+                    v_i = F.interpolate(v_i.clamp(min=0),  (H_f, W_f), mode="bilinear", antialias=False)
                 if m_i1.shape[-2:] != (H_f, W_f):
-                    m_i1 = F.interpolate(
-                        m_i1, (H_f, W_f), mode="bilinear", antialias=False
-                    )
-                    v_i1 = F.interpolate(
-                        v_i1.clamp(min=0), (H_f, W_f), mode="bilinear", antialias=False
-                    )
+                    m_i1 = F.interpolate(m_i1, (H_f, W_f), mode="bilinear", antialias=False)
+                    v_i1 = F.interpolate(v_i1.clamp(min=0), (H_f, W_f), mode="bilinear", antialias=False)
 
-                std_i = v_i.clamp(min=1e-8).sqrt()
+                std_i  = v_i.clamp(min=1e-8).sqrt()
                 std_i1 = v_i1.clamp(min=1e-8).sqrt()
-                diff = (m_i - m_i1).pow(2) + (std_i - std_i1).pow(2)  # [N, C, H_f, W_f]
+                diff = (m_i - m_i1).pow(2) + (std_i - std_i1).pow(2)  # [N, C_f, H_f, W_f]
                 diff = diff.mean(dim=1, keepdim=True).float()
-                if diff.shape[-2:] != (H, W):
-                    diff = F.interpolate(diff, (H, W), mode="bilinear", antialias=False)
-                d_i += diff
+                if diff.shape[-2:] != (h_ds, w_ds):
+                    diff = F.interpolate(diff, (h_ds, w_ds), mode="bilinear", antialias=False)
+                d_maps_accum[i] += diff.squeeze(1)
 
-            d_maps.append(d_i.squeeze(1))  # [N, H, W]
-
-        d = torch.stack(d_maps)  # [S-1, N, H, W]
+            del means, vars_
+            torch.cuda.empty_cache()
 
         # ── Algorithm 1 ───────────────────────────────────────────────────
+        d = torch.stack(d_maps_accum)  # [S-1, N, h_ds, w_ds]
+        del d_maps_accum
+
         d_max, d_argmax = d.max(dim=0)
         d_bar = torch.where(d_argmax < k, f * d_max, d_max)
         search = d[k:]
         above = search > (pi * d_bar).unsqueeze(0)
+        del d
 
-        has_rho = above.any(dim=0)
+        has_rho  = above.any(dim=0)
         rho_local = above.float().argmax(dim=0)
-        rho_0 = k + rho_local
+        rho_0     = k + rho_local
         sigma_idx = (rho_0 - zeta).clamp(0, S - 1)
 
         sigmas_t = frame.new_tensor(sigmas)
         omega = sigmas_t[sigma_idx]
         omega = torch.where(has_rho, omega, sigmas_t[0].expand_as(omega))
         omega = omega.clamp(min=1e-3)
-        return torch.log2(omega).unsqueeze(1)  # [N, 1, H, W]
+        log2_sigma = torch.log2(omega).unsqueeze(1)  # [N, 1, h_ds, w_ds]
+
+        # Upsample sigma map back to original frame resolution
+        if (h_ds, w_ds) != (H, W):
+            log2_sigma = F.interpolate(
+                log2_sigma.float(), (H, W), mode="bilinear", antialias=False
+            )
+        return log2_sigma
 
 
 # EMLNETSaliency wrapper for arbitrary input sizes

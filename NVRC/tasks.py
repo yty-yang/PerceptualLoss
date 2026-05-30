@@ -109,7 +109,7 @@ class OverfitTask:
         f: float = 3 / 7,
         pi: float = 0.35,
         zeta: int = 1,
-        batch_size: int = 4,
+        batch_size: int = 1,
     ) -> None:
         """Precompute per-frame intrinsic sigma maps once before training.
 
