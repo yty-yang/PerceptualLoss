@@ -68,6 +68,99 @@ class WassersteinDistortionFeature(nn.Module):
         self.num_levels = num_levels
         self.lowpass = LowpassFilter2D()
 
+    def extract_stats(
+        self, features: Tensor
+    ) -> tuple[list[Tensor], list[Tensor]]:
+        """Compute multi-level mean/variance pyramid from a feature map.
+
+        Separates the statistics extraction step from the comparison step so
+        that callers can run the pyramid once and reuse it across multiple
+        comparisons (e.g. adjacent sigma pairs in sigma-map generation).
+
+        Returns:
+            means, variances — each a list of num_levels tensors at halving
+            spatial resolutions.
+        """
+        if features.dtype == torch.float16:
+            features = features.to(torch.bfloat16)
+        return self.multi_level_stats(features)
+
+    def compare_stats(
+        self,
+        feat_a: Tensor,
+        means_a: list[Tensor],
+        vars_a: list[Tensor],
+        feat_b: Tensor,
+        means_b: list[Tensor],
+        vars_b: list[Tensor],
+        log2_sigma: Tensor,
+        return_map: bool = False,
+    ) -> Tensor:
+        """Compare pre-extracted statistics without re-running the pyramid.
+
+        Reuses (means, variances) from extract_stats() to skip redundant
+        multi_level_stats calls — useful when the same feature map participates
+        in multiple comparisons.
+
+        Args:
+            feat_a / feat_b:  raw feature tensors (needed for wd_maps[0])
+            means_a/b, vars_a/b:  outputs of extract_stats for each side
+            log2_sigma:  spatial sigma map [N, 1, H_feat, W_feat]
+            return_map:  when True, return per-pixel map [N, 1, H_feat, W_feat]
+                         instead of a scalar; contributions from coarser pyramid
+                         levels are bilinearly upsampled to H_feat × W_feat.
+
+        Returns:
+            Scalar Wasserstein distortion, or per-pixel map when return_map=True.
+        """
+        dtype = torch.bfloat16 if feat_a.dtype == torch.float16 else feat_a.dtype
+        feat_a      = feat_a.to(dtype)
+        feat_b      = feat_b.to(dtype)
+        log2_sigma  = log2_sigma.to(dtype)
+
+        # Level 0: direct squared difference; levels 1..num_levels: pyramid stats
+        wd_maps = [torch.square(feat_a - feat_b)]
+        for ma, va, mb, vb in zip(means_a, vars_a, means_b, vars_b):
+            std_a = torch.sqrt(torch.clamp(va.to(dtype), min=1e-8))
+            std_b = torch.sqrt(torch.clamp(vb.to(dtype), min=1e-8))
+            wd_maps.append(
+                torch.square(ma.to(dtype) - mb.to(dtype)) + torch.square(std_a - std_b)
+            )
+
+        # Sigma-weighted reduction.
+        # Size schedule (see MultiLevelStats):
+        #   wd_maps[0]: [H, W]  (raw diff)
+        #   wd_maps[1]: [H, W]  (pyramid level 0, same size)
+        #   wd_maps[2]: [H/2, W/2]  (pyramid level 1)
+        #   wd_maps[i≥2]: [H/2^(i-1), W/2^(i-1)]
+        # log2_sigma is downsampled AFTER weights for the current iteration are
+        # computed, so sizes always match between weights_i and wd_maps[i].
+        if return_map:
+            H0, W0 = log2_sigma.shape[-2:]
+            ls      = log2_sigma
+            result  = log2_sigma.new_zeros(feat_a.shape[0], 1, H0, W0)
+            for i, wd_map in enumerate(wd_maps):
+                w_i    = F.relu(1 - torch.abs(ls - i))
+                contrib = (w_i * wd_map).mean(dim=1, keepdim=True)   # [N,1,Hi,Wi]
+                if contrib.shape[-2:] != (H0, W0):
+                    contrib = F.interpolate(
+                        contrib.float(), size=(H0, W0), mode="bilinear", antialias=False
+                    ).to(dtype)
+                result += contrib
+                if i > 0:
+                    ls = self.lowpass(ls, stride=2)
+            return result
+        else:
+            wasserstein_dist: Tensor | int = 0
+            ls = log2_sigma
+            for i, wd_map in enumerate(wd_maps):
+                w_i = F.relu(1 - torch.abs(ls - i))
+                if i > 0:
+                    ls = self.lowpass(ls, stride=2)
+                wasserstein_dist = wasserstein_dist + (w_i * wd_map).mean()
+            assert isinstance(wasserstein_dist, Tensor)
+            return wasserstein_dist
+
     @override
     def forward(
         self,
@@ -81,24 +174,13 @@ class WassersteinDistortionFeature(nn.Module):
             features_a = features_a.to(torch.bfloat16)
             features_b = features_b.to(torch.bfloat16)
             log2_sigma = log2_sigma.to(torch.bfloat16)
-        mean_pyr_a, var_pyr_a = self.multi_level_stats(features_a)
-        mean_pyr_b, var_pyr_b = self.multi_level_stats(features_b)
-        wd_maps = [torch.square(features_a - features_b)]
-        for i in range(self.num_levels):
-            std_pyr_a_i = torch.sqrt(torch.clamp(var_pyr_a[i], min=1e-8))
-            std_pyr_b_i = torch.sqrt(torch.clamp(var_pyr_b[i], min=1e-8))
-            square_mu = torch.square(mean_pyr_a[i] - mean_pyr_b[i])
-            square_scale = torch.square(std_pyr_a_i - std_pyr_b_i)
-            wd_maps.append(square_mu + square_scale)
-
-        wasserstein_dist = 0
-        for i, wd_map in enumerate(wd_maps):
-            weights_i = F.relu(1 - torch.abs(log2_sigma - i))
-            if i > 0:
-                log2_sigma = self.lowpass(log2_sigma, stride=2)
-            wasserstein_dist += (weights_i * wd_map).mean()
-        assert isinstance(wasserstein_dist, Tensor)
-        return wasserstein_dist
+        means_a, vars_a = self.multi_level_stats(features_a)
+        means_b, vars_b = self.multi_level_stats(features_b)
+        return self.compare_stats(
+            features_a, means_a, vars_a,
+            features_b, means_b, vars_b,
+            log2_sigma, return_map=False,
+        )
 
 
 # pyright: reportIndexIssue=false

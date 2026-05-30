@@ -9,6 +9,7 @@ from NVRC.loss_utils import (
     create_ssim_win,
     get_wloss,
     get_saliency_context,
+    get_sigma_context,
     get_lpips_model,
     get_dists_model,
 )
@@ -299,6 +300,60 @@ def wd_saliency(x, y, sigma_max=16.0, pmin=0.5, scale=0.02):
     return loss * scale
 
 
+@torch.compiler.disable
+def wd_sigma(x, y, scale=0.02):
+    """
+    Compute per-frame WD loss with an intrinsic sigma-map (Algorithm 1).
+
+    The sigma map is precomputed from the reference frames before training via
+    precompute_sigma() and injected through the sigma context.  Each pixel's
+    log2_sigma reflects its natural content scale: fine texture → small sigma
+    (strict comparison), smooth region → large sigma (lenient comparison).
+
+    Args:
+        x:     original frames  [N, C, T, H, W]
+        y:     reconstructed frames [N, C, T, H, W]
+        scale: global loss scale factor
+    """
+    N, C, T, H, W = x.shape
+    wloss = get_wloss(x.device)
+    loss = torch.empty(N, T, device=x.device)
+
+    precomputed_sigma, patch_coords, idx_max = get_sigma_context()
+    if precomputed_sigma is None or patch_coords is None:
+        raise RuntimeError(
+            "wd-sigma requires precomputed sigma context. Call precompute_sigma() before training."
+        )
+
+    # Crop per-frame sigma map [T_total, 1, H_full, W_full] to each patch's spatial region.
+    _, _, h_s, w_s = precomputed_sigma.shape
+    H_max, W_max = idx_max[1], idx_max[2]
+    crop_h = h_s // H_max
+    crop_w = w_s // W_max
+    crops = []
+    for n in range(N):
+        h_n, w_n = patch_coords[n, 1].item(), patch_coords[n, 2].item()
+        y0, x0 = h_n * h_s // H_max, w_n * w_s // W_max
+        y1, x1 = (h_n + 1) * h_s // H_max, (w_n + 1) * w_s // W_max
+        per_t = []
+        for t_step in range(T):
+            t_frame = patch_coords[n, 0].item() * T + t_step
+            c = precomputed_sigma[t_frame, :, y0:y1, x0:x1]  # [1, raw_h, raw_w]
+            c = F.interpolate(
+                c.unsqueeze(0), size=(crop_h, crop_w), mode="bilinear", antialias=False
+            ).squeeze(0)
+            per_t.append(c)
+        crops.append(torch.stack(per_t, dim=0))  # [T, 1, crop_h, crop_w]
+    sigma_all = torch.stack(crops, dim=0).to(x.device)  # [N, T, 1, crop_h, crop_w]
+
+    for t in range(T):
+        log2_sigma = F.interpolate(
+            sigma_all[:, t], size=(H, W), mode="bilinear", antialias=False
+        )  # [N, 1, H, W]
+        loss[:, t] = wloss(x[:, :, t], y[:, :, t], log2_sigma)
+    return loss * scale
+
+
 def lpips_metric(x, y):
     """Compute per-frame LPIPS (lower = more similar)."""
     N, C, T, H, W = x.shape
@@ -365,6 +420,8 @@ def compute_loss(name, x, y):
         loss = wd(x, y)
     elif name == "wd-saliency":
         loss = wd_saliency(x, y)
+    elif name == "wd-sigma":
+        loss = wd_sigma(x, y)
     else:
         raise ValueError
     assert loss.ndim == 2, "loss is expected to have 2D ([N, T])"

@@ -8,6 +8,9 @@ from NVRC.loss_models.RankDVQA.STANet.networks.common import ScalingLayer
 from NVRC.loss_models.WassersteinDistortion.wasserstein_distortion import (
     VGG16WassersteinDistortion,
 )
+from NVRC.loss_models.WassersteinDistortion.wasserstein_distortion.wasserstein_distortion import (
+    MultiLevelStats,
+)
 import NVRC.loss_models.EMLNETSaliency.resnet as resnet
 import NVRC.loss_models.EMLNETSaliency.decoder as decoder
 import lpips
@@ -22,6 +25,9 @@ _wloss = None
 _saliency_model = None
 _lpips_model = None
 _dists_model = None
+_sigma_stats: MultiLevelStats | None = (
+    None  # dedicated pyramid for sigma-map generation
+)
 
 # precomputed saliency context (set before compute_loss, cleared after)
 _saliency_precomputed: torch.Tensor | None = None  # [T_total, 1, h_s, w_s] on CPU
@@ -29,6 +35,15 @@ _saliency_patch_coords: torch.Tensor | None = (
     None  # [N, 3] CPU tensor: (t_idx, h_idx, w_idx)
 )
 _saliency_idx_max: tuple | None = None  # (T_max, H_max, W_max) patch grid size
+
+# precomputed sigma context (set before compute_loss, cleared after)
+_sigma_precomputed: torch.Tensor | None = (
+    None  # [T_total, 1, H, W] on CPU (full-res log2_sigma)
+)
+_sigma_patch_coords: torch.Tensor | None = (
+    None  # [N, 3] CPU tensor: (t_idx, h_idx, w_idx)
+)
+_sigma_idx_max: tuple | None = None  # (T_max, H_max, W_max) patch grid size
 
 
 def check_shape(x, y):
@@ -112,6 +127,161 @@ def clear_saliency_context() -> None:
 
 def get_saliency_context():
     return _saliency_precomputed, _saliency_patch_coords, _saliency_idx_max
+
+
+def set_sigma_context(
+    sigma: torch.Tensor, patch_coords: torch.Tensor, idx_max: tuple
+) -> None:
+    global _sigma_precomputed, _sigma_patch_coords, _sigma_idx_max
+    _sigma_precomputed = sigma
+    _sigma_patch_coords = patch_coords
+    _sigma_idx_max = idx_max
+
+
+def clear_sigma_context() -> None:
+    global _sigma_precomputed, _sigma_patch_coords, _sigma_idx_max
+    _sigma_precomputed = None
+    _sigma_patch_coords = None
+    _sigma_idx_max = None
+
+
+def get_sigma_context():
+    return _sigma_precomputed, _sigma_patch_coords, _sigma_idx_max
+
+
+def _interp_pyramid_level(
+    means: list,
+    vars_: list,
+    level: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Bilinearly interpolate between adjacent integer pyramid levels.
+
+    means[j] / vars_[j] are at resolution H/2^j × W/2^j (from MultiLevelStats).
+    The coarser level is upsampled to the finer level's resolution before blending.
+    If level exceeds the pyramid depth, the coarsest available level is returned.
+    """
+    n = len(means)
+    l0 = min(int(math.floor(level)), n - 1)
+    l1 = min(int(math.ceil(level)), n - 1)
+    if l0 == l1:
+        return means[l0], vars_[l0]
+    alpha = level - math.floor(level)
+    m0, v0 = means[l0], vars_[l0]
+    m1 = F.interpolate(means[l1], m0.shape[-2:], mode="bilinear", antialias=False)
+    v1 = F.interpolate(
+        vars_[l1].clamp(min=0), v0.shape[-2:], mode="bilinear", antialias=False
+    )
+    return (1 - alpha) * m0 + alpha * m1, (1 - alpha) * v0 + alpha * v1
+
+
+def build_intrinsic_sigma_map(
+    frame: torch.Tensor,
+    wloss,
+    sigmas: tuple,
+    k: int,
+    f: float,
+    pi: float,
+    zeta: int,
+) -> torch.Tensor:
+    """
+    Algorithm 1 using Wasserstein distortion as the per-pixel distance measure.
+
+    VGG runs exactly once; d_i is computed as the squared mean/std difference
+    between adjacent pyramid levels of the same feature pyramid — no external
+    blurring required.  The dedicated MultiLevelStats pyramid (_sigma_stats) has
+    enough levels to cover the full sigma range (up to log2(max_sigma)+2 levels).
+
+    Args:
+        frame:  [N, C, H, W] reference frame in [0, 1]
+        wloss:  VGG16WassersteinDistortion instance
+        sigmas: length-S tuple of monotonically increasing sigma values
+        k, f, pi, zeta: Algorithm 1 hyperparameters
+
+    Returns:
+        log2_sigma: [N, 1, H, W]
+    """
+    global _sigma_stats
+    N, C, H, W = frame.shape
+    S = len(sigmas)
+
+    img = frame.expand(-1, 3, -1, -1) if (wloss.grayscale or C == 1) else frame
+    if wloss.normalize_center_to_zero:
+        img = img * 2 - 1
+
+    # Ensure the pyramid module has enough levels to cover max(sigmas)
+    num_levels_needed = int(math.ceil(math.log2(max(sigmas)))) + 2
+    if _sigma_stats is None or _sigma_stats.num_levels < num_levels_needed:
+        _sigma_stats = MultiLevelStats(num_levels=num_levels_needed)
+    _sigma_stats = _sigma_stats.to(frame.device)
+    _sigma_stats.eval()
+
+    with torch.no_grad():
+        # ── VGG ONCE ──────────────────────────────────────────────────────
+        all_feats = wloss.feature_backbone(img, num_scales=1)
+        # [normalised_input, relu1_2, relu2_2, relu3_3, relu4_3, relu5_3]
+
+        # ── Pyramid ONCE per feature map ──────────────────────────────────
+        # all_pyramid[i] = (means, vars) for all_feats[i]
+        # means[j]: [N, C_i, H_i/2^j, W_i/2^j]
+        all_pyramid = [_sigma_stats(feat) for feat in all_feats]
+
+        # ── d_i via pyramid-level comparison ----------------------────────
+        d_maps = []
+        for i in range(S - 1):
+            l_i = math.log2(sigmas[i])
+            l_i1 = math.log2(sigmas[i + 1])
+
+            d_i = frame.new_zeros(N, 1, H, W)
+            for means, vars_ in all_pyramid:
+                H_f, W_f = means[0].shape[-2:]
+
+                m_i, v_i = _interp_pyramid_level(means, vars_, l_i)
+                m_i1, v_i1 = _interp_pyramid_level(means, vars_, l_i1)
+
+                # Bring both to level-0 resolution of this feature map
+                if m_i.shape[-2:] != (H_f, W_f):
+                    m_i = F.interpolate(
+                        m_i, (H_f, W_f), mode="bilinear", antialias=False
+                    )
+                    v_i = F.interpolate(
+                        v_i.clamp(min=0), (H_f, W_f), mode="bilinear", antialias=False
+                    )
+                if m_i1.shape[-2:] != (H_f, W_f):
+                    m_i1 = F.interpolate(
+                        m_i1, (H_f, W_f), mode="bilinear", antialias=False
+                    )
+                    v_i1 = F.interpolate(
+                        v_i1.clamp(min=0), (H_f, W_f), mode="bilinear", antialias=False
+                    )
+
+                std_i = v_i.clamp(min=1e-8).sqrt()
+                std_i1 = v_i1.clamp(min=1e-8).sqrt()
+                diff = (m_i - m_i1).pow(2) + (std_i - std_i1).pow(2)  # [N, C, H_f, W_f]
+                diff = diff.mean(dim=1, keepdim=True).float()
+                if diff.shape[-2:] != (H, W):
+                    diff = F.interpolate(diff, (H, W), mode="bilinear", antialias=False)
+                d_i += diff
+
+            d_maps.append(d_i.squeeze(1))  # [N, H, W]
+
+        d = torch.stack(d_maps)  # [S-1, N, H, W]
+
+        # ── Algorithm 1 ───────────────────────────────────────────────────
+        d_max, d_argmax = d.max(dim=0)
+        d_bar = torch.where(d_argmax < k, f * d_max, d_max)
+        search = d[k:]
+        above = search > (pi * d_bar).unsqueeze(0)
+
+        has_rho = above.any(dim=0)
+        rho_local = above.float().argmax(dim=0)
+        rho_0 = k + rho_local
+        sigma_idx = (rho_0 - zeta).clamp(0, S - 1)
+
+        sigmas_t = frame.new_tensor(sigmas)
+        omega = sigmas_t[sigma_idx]
+        omega = torch.where(has_rho, omega, sigmas_t[0].expand_as(omega))
+        omega = omega.clamp(min=1e-3)
+        return torch.log2(omega).unsqueeze(1)  # [N, 1, H, W]
 
 
 # EMLNETSaliency wrapper for arbitrary input sizes

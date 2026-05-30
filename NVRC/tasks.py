@@ -1,7 +1,15 @@
 from utils import *
 from io_utils import *
 from losses import *
-from NVRC.loss_utils import get_saliency_model, set_saliency_context, clear_saliency_context
+from NVRC.loss_utils import (
+    get_saliency_model,
+    get_wloss,
+    set_saliency_context,
+    clear_saliency_context,
+    set_sigma_context,
+    clear_sigma_context,
+    build_intrinsic_sigma_map,
+)
 
 
 class OverfitTask:
@@ -25,6 +33,7 @@ class OverfitTask:
         self.device = device
         self.metrics_buffer = {}
         self._saliency_cache: torch.Tensor | None = None  # [T_total, 1, h_s, w_s] on CPU
+        self._sigma_cache: torch.Tensor | None = None     # [T_total, 1, H, W] on CPU (full-res log2_sigma)
 
         assert isinstance(lamb, (list, tuple)) and len(lamb) == 1, 'lamb should be a list/tuple with a single value'
         self.lamb = torch.tensor(sorted(lamb), dtype=torch.float32, device=self.device)
@@ -92,6 +101,50 @@ class OverfitTask:
         self._saliency_cache = torch.cat(results, dim=0)  # [T, 1, h_s, w_s]
         self.logger.info(f'Precomputed saliency cache: {self._saliency_cache.shape}')
 
+    def precompute_sigma(
+        self,
+        dataset,
+        sigmas: tuple = (1, 1.5, 2, 4, 7, 10, 15, 20, 25, 30, 35, 45, 55, 65, 75, 85, 105, 125, 145, 165, 185, 225),
+        k: int = 5,
+        f: float = 3 / 7,
+        pi: float = 0.35,
+        zeta: int = 1,
+        batch_size: int = 4,
+    ) -> None:
+        """Precompute per-frame intrinsic sigma maps once before training.
+
+        Runs Algorithm 1 on full frames (not crops), storing [T, 1, H, W]
+        log2_sigma on CPU.  During training, wd_sigma crops the appropriate
+        spatial region per patch.  Only supported for PNGVideo (4-D numpy cache).
+        """
+        if not any(loss_type == 'wd-sigma' for loss_type in self.loss_cfg[1::2]):
+            return
+
+        video = dataset.video
+        cache = getattr(video, 'cache', None)
+        if cache is None or not (hasattr(cache, 'ndim') and cache.ndim == 4):
+            self.logger.info('Sigma precomputation skipped: unsupported video format.')
+            return
+
+        device = self.device
+        T_total = dataset.get_num_frames()
+
+        scale = dataset.channel_scale.view(1, -1, 1, 1)
+        shift = dataset.channel_shift.view(1, -1, 1, 1)
+
+        wloss = get_wloss(device)
+        results = []
+        for i in range(0, T_total, batch_size):
+            # cache: [T, H, W, C] numpy → [B, C, H, W] float tensor in [0,1]
+            batch_np = cache[i:i + batch_size]
+            batch_t = torch.from_numpy(batch_np.astype(np.float32)).permute(0, 3, 1, 2)
+            batch_t = (batch_t * scale + shift).clamp(0, 1).to(device)
+            log2_sigma = build_intrinsic_sigma_map(batch_t, wloss, sigmas, k, f, pi, zeta)
+            results.append(log2_sigma.cpu())
+
+        self._sigma_cache = torch.cat(results, dim=0)  # [T, 1, H, W]
+        self.logger.info(f'Precomputed sigma cache: {self._sigma_cache.shape}')
+
     def parse_batch(self, batch):
         """
         Parse the input and output batch during training/evaluation step
@@ -129,6 +182,8 @@ class OverfitTask:
     def compute_d_loss(self, x, y, lamb, patch_coords=None, idx_max=None):
         if self._saliency_cache is not None and patch_coords is not None:
             set_saliency_context(self._saliency_cache, patch_coords.cpu(), idx_max)
+        if self._sigma_cache is not None and patch_coords is not None:
+            set_sigma_context(self._sigma_cache, patch_coords.cpu(), idx_max)
         try:
             loss = 0.
             for i in range(len(self.loss_cfg) // 2):
@@ -137,6 +192,7 @@ class OverfitTask:
                 loss += weight * lamb * compute_loss(loss_type, x, y).mean()
         finally:
             clear_saliency_context()
+            clear_sigma_context()
         return loss
 
     def compute_r_loss(self, r):
